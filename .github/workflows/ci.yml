@@ -33,7 +33,7 @@ jobs:
       has_package_changes: ${{ steps.changed.outputs.has_package_changes }}
       docs_changed: ${{ steps.changed.outputs.docs_changed }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v7
@@ -102,7 +102,7 @@ jobs:
       matrix:
         component: ${{ fromJson(needs.detect.outputs.packages) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -138,7 +138,7 @@ jobs:
       matrix:
         component: ${{ fromJson(needs.detect.outputs.packages) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -168,7 +168,7 @@ jobs:
       matrix:
         component: ${{ fromJson(needs.detect.outputs.packages) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -210,7 +210,7 @@ jobs:
       matrix:
         component: ${{ fromJson(needs.detect.outputs.packages) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -238,7 +238,7 @@ jobs:
         # on Codecov. The action no-ops cleanly when unauthenticated or
         # when the project is unknown. Per-component coverage is reported
         # under a Codecov flag matching the package name.
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: coverage.xml
           flags: ${{ matrix.component }}
@@ -276,7 +276,7 @@ jobs:
     if: needs.detect.outputs.has_package_changes == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -305,7 +305,7 @@ jobs:
     if: needs.detect.outputs.has_package_changes == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -335,7 +335,7 @@ jobs:
     if: needs.detect.outputs.has_package_changes == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install OSV-Scanner
         # Pull the latest release each run so vulnerability definitions
         # stay fresh; reproducibility is intentionally traded for
@@ -379,7 +379,7 @@ jobs:
       no_bumps: ${{ steps.bump.outputs.no_bumps }}
       bumped:   ${{ steps.bump.outputs.bumped }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           # Default GITHUB_TOKEN is enough for the push.
@@ -510,7 +510,7 @@ jobs:
       contents: write       # gh release create
       id-token: write       # PyPI Trusted Publishing
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           # Pull the release commit + tags multicz just pushed so the
@@ -594,7 +594,7 @@ jobs:
       pages: write
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           # Pull the release commit + tags multicz just pushed so the
           # site reflects the freshly published versions.
