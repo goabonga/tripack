@@ -138,6 +138,40 @@ next call within the same scope retries. A factory that
 recursively resolves its own token trips the cycle detector and
 leaves the scope's cache empty.
 
+## Idempotent registration
+
+`Scope.remember` is idempotent at the cache level. If the same
+token has already been cached, the existing entry wins: the
+cache is not overwritten, the teardown list is not extended,
+and the existing instance is the return value.
+
+```python
+scope = Scope()
+first = ConnectionPool()
+second = ConnectionPool()
+
+a = scope.remember(ConnectionPool, first)
+b = scope.remember(ConnectionPool, second)
+
+assert a is first
+assert b is first              # second discarded, first wins
+assert scope.teardowns() == (first,)  # only the first is registered
+```
+
+This protects against the async race where two coroutines both
+build a SCOPED instance after observing an empty cache: the
+first one to reach `remember` wins, and the second receives the
+canonical instance back. The discarded instance's lifetime is
+the caller's responsibility - the runtime cannot retroactively
+close a value the factory already produced. Sync resolution is
+single-threaded within one task, so the race only matters for
+async paths.
+
+The same guard sits in the resolver's SINGLETON dispatch: two
+concurrent `aresolve(Token)` calls on a SINGLETON binding both
+complete their factory but return the same canonical instance,
+with a single teardown registration.
+
 ## Boundary with other lifecycles
 
 | Lifecycle | Cache lives on | Survives scope exit |

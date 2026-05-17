@@ -538,3 +538,65 @@ def test_resolve_can_read_an_async_built_singleton_from_the_cache() -> None:
         _aresolve_then_resolve_async_only_singleton()
     )
     assert async_built is sync_observed
+
+
+# --- idempotent registration guard ----------------------------------------
+
+
+async def _aresolve_singleton_race() -> tuple[Any, Any, int, int]:
+    """Coroutine helper for :func:`test_aresolve_singleton_race_is_idempotent`.
+
+    Two concurrent ``aresolve`` tasks both pass the cache miss
+    check, both invoke the slow factory, and both reach
+    ``_cache_if_applicable`` with their own freshly-built
+    instance. The idempotent guard makes the first writer win;
+    the second receives the canonical instance back, and its
+    teardown is NOT re-registered.
+    """
+    construction_can_finish = asyncio.Event()
+    factory_calls = 0
+
+    async def _slow_factory() -> _Closeable:
+        nonlocal factory_calls
+        factory_calls += 1
+        await construction_can_finish.wait()
+        return _Closeable()
+
+    graph = DependencyGraph()
+    graph.register(
+        Binding(
+            token=_Closeable,
+            async_factory=_slow_factory,
+            lifecycle=Lifecycle.SINGLETON,
+        )
+    )
+    resolver = Resolver(graph)
+
+    task_a = asyncio.create_task(resolver.aresolve(_Closeable))
+    task_b = asyncio.create_task(resolver.aresolve(_Closeable))
+
+    # Yield several times so both tasks reach the factory's await point
+    # before either of them is allowed to complete.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    construction_can_finish.set()
+    a, b = await asyncio.gather(task_a, task_b)
+    return a, b, factory_calls, len(resolver.teardowns())
+
+
+def test_aresolve_singleton_race_is_idempotent() -> None:
+    """Concurrent SINGLETON construction returns the same canonical instance.
+
+    Both racing factories complete, but only the first writer
+    populates the cache and registers the teardown; the second
+    racer's instance is discarded and its teardown is NOT
+    registered.
+    """
+    a, b, factory_calls, teardown_count = asyncio.run(_aresolve_singleton_race())
+    # Both factory invocations happened: the race is real.
+    assert factory_calls == 2
+    # Idempotent guard: both racers receive the same canonical instance.
+    assert a is b
+    # Only the winner's teardown is registered; no duplicate.
+    assert teardown_count == 1
