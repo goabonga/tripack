@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+[project]
+site_name = "Tripack"
+site_description = "Tripack is a compact Python project exploring dependency injection and IoC container patterns across three packages."
+site_author = "Chris"
+site_url = "https://goabonga.github.io/tripack/"
+repo_url = "https://github.com/goabonga/tripack"
+repo_name = "goabonga/tripack"
