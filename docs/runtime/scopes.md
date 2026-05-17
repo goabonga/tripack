@@ -112,13 +112,49 @@ with lifetime_scope():
 assert c is not d
 ```
 
-## Teardown registry
+## Teardown propagation
 
 `SCOPED` instances exposing `close` or `aclose` are appended to
-`scope.teardowns()` in construction order. `TRANSIENT`
-instances are never registered (they have no owner to close
-them); `SINGLETON` instances are registered on the resolver
-instead, not on any scope:
+`scope.teardowns()` in construction order and torn down in
+**LIFO** order on scope exit. `TRANSIENT` instances are never
+registered (no owner to close them); `SINGLETON` instances are
+registered on the resolver instead.
+
+```python
+with lifetime_scope() as scope:
+    pool = resolver.resolve(ConnectionPool)  # SCOPED + closeable
+    cache = resolver.resolve(RedisCache)     # SCOPED + closeable
+# pool and cache are closed in reverse order on the `with` exit:
+# cache.close() runs first, then pool.close()
+```
+
+The async variant `alifetime_scope` awaits `aclose` on each
+target on exit, falling back to sync `close` for sync-only
+ones:
+
+```python
+async with alifetime_scope() as scope:
+    pool = await resolver.aresolve(AsyncConnectionPool)
+# scope's aclose() runs: await pool.aclose() then ...
+```
+
+Two convenience guarantees:
+
+- **Teardown happens even when the body raises.** The scope's
+  `close` / `aclose` is invoked from the context manager's
+  `finally`, so resources do not leak on the error path.
+- **Single failing target does not skip its siblings.** Errors
+  are collected and surfaced as one `ExceptionGroup` at the
+  end; every target gets a chance to close. A target's `close`
+  is required to be idempotent by the `Closeable` contract,
+  so a double invocation is safe.
+
+If the sync `lifetime_scope` ends but the scope holds async-
+only teardowns (only `aclose`, no `close`), those targets are
+skipped silently - reach them through `alifetime_scope`
+instead. The skip is intentional: a sync exit cannot await.
+
+### Teardown registry
 
 ```python
 with lifetime_scope() as scope:

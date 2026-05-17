@@ -71,6 +71,8 @@ from tripack_runtime.graph import DependencyGraph
 from tripack_runtime.scope import (
     _MISSING,
     Scope,
+    _close_all_async,
+    _close_all_sync,
     current_scope,
     is_teardown_target,
 )
@@ -104,25 +106,60 @@ class Resolver:
     adapter object.
     """
 
-    __slots__ = ("_graph", "_singletons", "_teardowns")
+    __slots__ = ("_closed", "_graph", "_singletons", "_teardowns")
 
     def __init__(self, graph: DependencyGraph) -> None:
         """Bind the resolver to ``graph``; initialise empty caches."""
         self._graph = graph
         self._singletons: dict[DependencyToken, Any] = {}
         self._teardowns: list[Closeable | AsyncCloseable] = []
+        self._closed = False
 
     def teardowns(self) -> tuple[Closeable | AsyncCloseable, ...]:
         """Snapshot of SINGLETON teardown targets in registration order.
 
         Returned as a tuple so callers cannot mutate the
         underlying list. Insertion order matches construction
-        order; the eventual teardown propagation (3.9) will
-        iterate in reverse so dependents close before what they
-        depend on. SCOPED teardowns are exposed on each
-        :class:`Scope` separately and are not included here.
+        order; :meth:`close` / :meth:`aclose` iterate it in
+        reverse so dependents close before what they depend on.
+        SCOPED teardowns are exposed on each :class:`Scope`
+        separately and are not included here.
         """
         return tuple(self._teardowns)
+
+    def close(self) -> None:
+        """Close every registered SINGLETON teardown target in LIFO order.
+
+        Mirrors :meth:`Scope.close`: sync ``close`` is invoked
+        on each target in reverse registration order; targets
+        exposing only ``aclose`` are skipped silently (use
+        :meth:`aclose` for them). Errors are collected and
+        surfaced as a single :class:`ExceptionGroup`. Idempotent
+        via an internal ``_closed`` flag - a second call is a
+        no-op.
+        """
+        if self._closed:
+            return
+        try:
+            _close_all_sync(self._teardowns)
+        finally:
+            self._closed = True
+
+    async def aclose(self) -> None:
+        """Asynchronously close every registered SINGLETON teardown target.
+
+        Mirrors :meth:`Scope.aclose`: prefers ``aclose`` when
+        available, falls back to sync ``close`` for sync-only
+        targets, collects errors, raises one
+        :class:`ExceptionGroup` at the end. Idempotent the same
+        way as :meth:`close`.
+        """
+        if self._closed:
+            return
+        try:
+            await _close_all_async(self._teardowns)
+        finally:
+            self._closed = True
 
     def resolve[T](self, token: type[T]) -> T:
         """Return an instance for ``token`` via its sync factory.

@@ -89,6 +89,28 @@ await resolver.aresolve(Clock)   # constructs and caches
 resolver.resolve(Clock)          # cache hit, returns the cached one
 ```
 
+## Teardown propagation
+
+Once you are done with the resolver (typically at container
+shutdown), call `close()` or `aclose()`:
+
+```python
+resolver = Resolver(graph)
+# ... resolve a few SINGLETONs ...
+resolver.close()   # sync teardown for every registered SINGLETON
+# or
+await resolver.aclose()  # async teardown (awaits aclose, falls
+                         # back to sync close for sync-only targets)
+```
+
+Both methods iterate the SINGLETON teardown registry in **LIFO**
+order so dependents close before what they depend on, collect
+exceptions into a single `ExceptionGroup`, and are idempotent
+(a second call is a no-op via an internal `_closed` flag).
+`Resolver.close()` skips async-only targets silently - reach
+them via `aclose()` instead. `SCOPED` teardowns are owned by
+their `Scope` and run on scope exit, not on `resolver.close()`.
+
 ## Teardown registration
 
 When a SINGLETON is built and its instance exposes a `close`
