@@ -10,8 +10,10 @@ any time without prior notice.
 
 from tripack_runtime.__version__ import __version__
 from tripack_runtime.binding import Binding
+from tripack_runtime.graph import DependencyGraph
 
 __all__ = [
     "Binding",
+    "DependencyGraph",
     "__version__",
 ]
