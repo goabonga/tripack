@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# multicz.toml - per-component versioning, changelogs and tags for the
+# Tripack workspace. Driven by Conventional Commits.
+# Docs: https://goabonga.github.io/multicz/
+
+[project]
+commit_convention = "conventional"
+tag_format = "{component}-v{version}"
+initial_version = "0.0.0"
+# Hooks below regenerate uv.lock so the workspace lockfile tracks the new
+# version. Without `allow`, multicz silently skips them and the next
+# `uv sync --frozen` in CI fails on lockfile drift.
+post_bump_policy = "allow"
+# Persist the last-released version per component for drift detection
+# (`multicz validate --strict`).
+state_file = ".multicz/state.json"
+
+# Custom commit types layered on top of the conventional defaults.
+# `deprecate:` announces an upcoming removal (raises a
+# `DeprecationWarning` in the code) and `remove:` performs the actual
+# removal after the n+2 minor window described in docs/stability.md.
+# Both bump the minor: the deprecation cycle is the breaking-change
+# announcement, so the removal itself is not breaking.
+[project.bump_rules]
+feat = "minor"
+fix = "patch"
+perf = "patch"
+revert = "patch"
+deprecate = "minor"
+remove = "minor"
+
+# CHANGELOG layout aligned on Keep-a-Changelog. multicz routes each
+# commit to the section whose `types` list contains its type. Order
+# matters: sections render in declaration order.
+[[project.changelog_sections]]
+title = "Added"
+types = ["feat"]
+
+[[project.changelog_sections]]
+title = "Deprecated"
+types = ["deprecate"]
+
+[[project.changelog_sections]]
+title = "Removed"
+types = ["remove"]
+
+[[project.changelog_sections]]
+title = "Fixed"
+types = ["fix"]
+
+[[project.changelog_sections]]
+title = "Performance"
+types = ["perf"]
+
+[components.tripack-contracts]
+paths = ["packages/tripack-contracts/**"]
+bump_files = [
+    { file = "packages/tripack-contracts/pyproject.toml", key = "project.version" },
+    { file = "packages/tripack-contracts/src/tripack_contracts/__version__.py", key = "regex:__version__\\s*=\\s*[\"']([^\"']+)[\"']" },
+]
+changelog = "packages/tripack-contracts/CHANGELOG.md"
+post_bump = ["uv lock"]
+
+[[components.tripack-contracts.artifacts]]
+type = "pypi"
+ref = "tripack-contracts=={version}"
+
+[components.tripack-runtime]
+paths = ["packages/tripack-runtime/**"]
+bump_files = [
+    { file = "packages/tripack-runtime/pyproject.toml", key = "project.version" },
+    { file = "packages/tripack-runtime/src/tripack_runtime/__version__.py", key = "regex:__version__\\s*=\\s*[\"']([^\"']+)[\"']" },
+]
+changelog = "packages/tripack-runtime/CHANGELOG.md"
+# Runtime layers on top of contracts: when contracts bumps, runtime cuts a
+# patch so consumers get a fresh build that pins the new contracts version.
+depends_on = ["tripack-contracts"]
+post_bump = ["uv lock"]
+
+[[components.tripack-runtime.artifacts]]
+type = "pypi"
+ref = "tripack-runtime=={version}"
+
+[components.tripack-container]
+paths = ["packages/tripack-container/**"]
+bump_files = [
+    { file = "packages/tripack-container/pyproject.toml", key = "project.version" },
+    { file = "packages/tripack-container/src/tripack_container/__version__.py", key = "regex:__version__\\s*=\\s*[\"']([^\"']+)[\"']" },
+]
+changelog = "packages/tripack-container/CHANGELOG.md"
+# Container is the public API surface and depends on both lower layers.
+depends_on = ["tripack-contracts", "tripack-runtime"]
+post_bump = ["uv lock"]
+
+[[components.tripack-container.artifacts]]
+type = "pypi"
+ref = "tripack-container=={version}"
