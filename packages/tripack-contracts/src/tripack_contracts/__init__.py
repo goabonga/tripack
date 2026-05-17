@@ -11,12 +11,15 @@ any time without prior notice.
 from tripack_contracts.__version__ import __version__
 from tripack_contracts.lifecycle import Lifecycle
 from tripack_contracts.provider import AsyncProvider, Provider
+from tripack_contracts.resolver import AsyncResolver, Resolver
 from tripack_contracts.types import DependencyToken
 
 __all__ = [
     "AsyncProvider",
+    "AsyncResolver",
     "DependencyToken",
     "Lifecycle",
     "Provider",
+    "Resolver",
     "__version__",
 ]
