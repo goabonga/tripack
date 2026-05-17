@@ -1,0 +1,664 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# `concurrency` cancels superseded PR runs but never main-branch releases.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Detect which workspace components changed since the comparison ref.
+  # On PR: vs the target branch. On main: vs each component's last tag
+  # (multicz default), which scopes the matrix to bump-worthy work.
+  #
+  # Docs detection bypasses multicz on purpose: the Zensical site has no
+  # version of its own, so it has no tag for `multicz changed` to compare
+  # against. We use a plain `git diff` on the docs paths instead.
+  detect:
+    name: detect changed packages
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.changed.outputs.packages }}
+      has_package_changes: ${{ steps.changed.outputs.has_package_changes }}
+      docs_changed: ${{ steps.changed.outputs.docs_changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install multicz
+        run: uv tool install multicz
+      - name: Validate multicz configuration
+        run: uv tool run multicz validate --strict
+      - id: changed
+        name: Compute changed components
+        run: |
+          set -euo pipefail
+          # 1. Package detection via multicz (tag-aware).
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            REF="origin/${{ github.base_ref }}"
+            ALL=$(uv tool run multicz changed --since "$REF" --output json | jq -c '.changed')
+          else
+            REF="each component's last tag"
+            ALL=$(uv tool run multicz changed --output json | jq -c '.changed')
+          fi
+          PACKAGES=$(echo "$ALL" | jq -c '.')
+          echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
+          if [ "$PACKAGES" = "[]" ] || [ -z "$PACKAGES" ]; then
+            echo "has_package_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_package_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+          # 2. Docs detection via git diff (no tag exists for docs).
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DOCS_BASE="origin/${{ github.base_ref }}"
+          elif git rev-parse HEAD^ > /dev/null 2>&1; then
+            DOCS_BASE="HEAD^"
+          else
+            # Very first commit on main - diff against the empty tree so
+            # the initial deploy still gates correctly.
+            DOCS_BASE="$(git hash-object -t tree /dev/null)"
+          fi
+          if git diff --quiet "$DOCS_BASE" HEAD -- docs zensical.toml; then
+            DOCS=false
+          else
+            DOCS=true
+          fi
+          echo "docs_changed=$DOCS" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Detected changes"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Packages | \`$PACKAGES\` |"
+            echo "| Docs changed | \`$DOCS\` (vs \`$DOCS_BASE\`) |"
+            echo "| Package reference | \`$REF\` |"
+            echo "| Event | \`${{ github.event_name }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Verify every changed component carries the two-line SPDX header on
+  # its Python sources and tests. The header convention is documented in
+  # CONTRIBUTING.md; the script lives at scripts/add_license_header.py.
+  license-headers:
+    name: license-headers (${{ matrix.component }})
+    needs: detect
+    if: needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.detect.outputs.packages) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --frozen --all-packages
+      - name: Check SPDX license headers
+        run: |
+          uv run python scripts/add_license_header.py \
+            --path "packages/${{ matrix.component }}/src" --types py --check
+          uv run python scripts/add_license_header.py \
+            --path "packages/${{ matrix.component }}/tests" --types py --check
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - all SPDX headers present in \`packages/${{ matrix.component }}/{src,tests}\`"
+          else
+            STATUS="fail - missing SPDX headers (see logs)"
+          fi
+          echo "## License headers - \`${{ matrix.component }}\`: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Strict static type checking with mypy on the public src/ of each
+  # changed component. Configuration lives under [tool.mypy] in the
+  # workspace root pyproject.toml. Tests are intentionally excluded -
+  # pytest is the source of truth for test behaviour.
+  type-check:
+    name: type-check (${{ matrix.component }})
+    needs: detect
+    if: needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.detect.outputs.packages) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --frozen --all-packages
+      - name: Type-check
+        run: uv run mypy "packages/${{ matrix.component }}/src"
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - mypy strict is clean on \`packages/${{ matrix.component }}/src\`"
+          else
+            STATUS="fail - mypy reported type errors (see logs)"
+          fi
+          echo "## Type-check - \`${{ matrix.component }}\`: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Lint every changed component with ruff. Configuration lives under
+  # [tool.ruff] in the workspace root pyproject.toml.
+  lint:
+    name: lint (${{ matrix.component }})
+    needs: detect
+    if: needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.detect.outputs.packages) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --frozen --all-packages
+      - name: Lint
+        run: |
+          uv run ruff check \
+            --output-format=github \
+            "packages/${{ matrix.component }}/src" \
+            "packages/${{ matrix.component }}/tests"
+      - name: Format check
+        # `ruff check` and `ruff format` are distinct: the linter doesn't
+        # touch whitespace, quote style, blank lines, trailing commas,
+        # argument indentation, etc. This step enforces those in CI for
+        # contributors who haven't installed the pre-commit hooks.
+        run: |
+          uv run ruff format --check \
+            "packages/${{ matrix.component }}/src" \
+            "packages/${{ matrix.component }}/tests"
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - ruff check + ruff format both clean on \`packages/${{ matrix.component }}/{src,tests}\`"
+          else
+            STATUS="fail - ruff reported violations (see annotations and logs)"
+          fi
+          echo "## Lint - \`${{ matrix.component }}\`: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Run pytest with coverage only for the components that changed.
+  test:
+    name: test (${{ matrix.component }})
+    needs: detect
+    if: needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.detect.outputs.packages) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --frozen --all-packages
+      - name: Resolve Python module name
+        id: mod
+        run: |
+          echo "name=$(echo '${{ matrix.component }}' | tr '-' '_')" >> "$GITHUB_OUTPUT"
+      - name: Run tests with coverage
+        run: |
+          uv run --package "${{ matrix.component }}" \
+            pytest "packages/${{ matrix.component }}/tests" \
+              --cov="${{ steps.mod.outputs.name }}" \
+              --cov-report=term-missing \
+              --cov-report=xml:coverage.xml
+      - name: Upload coverage artefact
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.component }}
+          path: coverage.xml
+          if-no-files-found: ignore
+      - name: Upload coverage to Codecov
+        # Optional: only takes effect once the repository is registered
+        # on Codecov. The action no-ops cleanly when unauthenticated or
+        # when the project is unknown. Per-component coverage is reported
+        # under a Codecov flag matching the package name.
+        uses: codecov/codecov-action@v6
+        with:
+          files: coverage.xml
+          flags: ${{ matrix.component }}
+          name: coverage-${{ matrix.component }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          disable_search: true
+      - name: Write step summary
+        if: always()
+        run: |
+          set +e
+          if [ -f coverage.xml ]; then
+            COV=$(uv run python -c "import xml.etree.ElementTree as ET; r = ET.parse('coverage.xml').getroot(); print(round(float(r.get('line-rate', '0')) * 100, 1))" 2>/dev/null)
+          else
+            COV=""
+          fi
+          if [ "${{ job.status }}" = "success" ]; then
+            if [ -n "$COV" ]; then
+              STATUS="pass - line coverage ${COV}%"
+            else
+              STATUS="pass"
+            fi
+          else
+            STATUS="fail - pytest failed (see logs)"
+          fi
+          echo "## Tests - \`${{ matrix.component }}\`: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Static security analysis of the Python source code (Bandit). Single
+  # workspace-level run - Bandit scans all `packages/*/src` together.
+  # Default severity floor (LOW) for now; tune via `--severity-level`
+  # once the codebase grows and the noise/signal ratio is known.
+  bandit:
+    name: bandit
+    needs: detect
+    if: needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Run Bandit
+        run: |
+          uvx bandit --recursive \
+            packages/tripack-contracts/src \
+            packages/tripack-runtime/src \
+            packages/tripack-container/src
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - Bandit found no security issues in workspace src/"
+          else
+            STATUS="fail - Bandit reported security findings (see logs)"
+          fi
+          echo "## Bandit: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Audit the resolved dependency graph (uv.lock) against the PyPI
+  # advisory database via pip-audit. Workspace-level: there is a single
+  # lockfile shared by the three packages.
+  pip-audit:
+    name: pip-audit
+    needs: detect
+    if: needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --frozen --all-packages
+      - name: Run pip-audit
+        # Run pip-audit in an ephemeral env (`uvx`) pointed at the
+        # workspace venv via `--path .venv`, so it audits the actual
+        # locked dependency set. `--skip-editable` ignores the three
+        # local workspace packages (tripack-contracts / -runtime /
+        # -container) - pip-audit cannot resolve them on PyPI before
+        # the first release, and that lookup failure would otherwise
+        # mask real CVEs in transitive deps. `--strict` is *not*
+        # passed: combined with `--skip-editable` it promotes the
+        # "skipped editable" notice to a fatal error. Without it,
+        # pip-audit still returns 1 on any actual vulnerability.
+        run: uvx pip-audit --skip-editable --path .venv
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - no known CVEs in installed dependencies"
+          else
+            STATUS="fail - pip-audit found CVEs (see logs)"
+          fi
+          echo "## pip-audit: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Multi-source vulnerability scan via OSV-Scanner (Google). Aggregates
+  # OSV.dev, GitHub Advisory Database, RustSec, etc. Reads uv.lock
+  # natively. Complementary to pip-audit (different advisory feeds).
+  osv-scanner:
+    name: osv-scanner
+    needs: detect
+    if: needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install OSV-Scanner
+        # Pull the latest release each run so vulnerability definitions
+        # stay fresh; reproducibility is intentionally traded for
+        # currency on a security tool.
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL \
+            "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64" \
+            -o "$HOME/.local/bin/osv-scanner"
+          chmod +x "$HOME/.local/bin/osv-scanner"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Run OSV-Scanner
+        run: osv-scanner scan source --lockfile=uv.lock
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - no known vulnerabilities in uv.lock"
+          else
+            STATUS="fail - OSV-Scanner reported vulnerabilities (see logs)"
+          fi
+          echo "## OSV-Scanner: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Release on main only. This job only does the git-side work: bump
+  # pyproject + __version__ via multicz, write changelogs, create
+  # release commit and per-component tags, push back to main. Artifact
+  # distribution (PyPI, GitHub Releases) is intentionally handled by the
+  # downstream `pypi-publish` job, which lives under a separate
+  # `pypi` environment for OIDC scoping and per-env reviewer gates.
+  release:
+    name: release
+    needs: [detect, license-headers, type-check, lint, test, bandit, pip-audit, osv-scanner]
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && needs.detect.outputs.has_package_changes == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push release commit + tags
+    outputs:
+      no_bumps:    ${{ steps.bump.outputs.no_bumps }}
+      bumped:      ${{ steps.bump.outputs.bumped }}
+      bumped_json: ${{ steps.bump.outputs.bumped_json }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # Default GITHUB_TOKEN is enough for the push.
+          persist-credentials: true
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install multicz
+        run: uv tool install multicz
+      - name: Configure git author
+        # Attribute the release commit to whoever pushed the head commit
+        # that triggered CI, falling back to the github-actions[bot]
+        # noreply identity when the payload carries no author.
+        run: |
+          NAME="${{ github.event.head_commit.author.name }}"
+          EMAIL="${{ github.event.head_commit.author.email }}"
+          git config user.name  "${NAME:-github-actions[bot]}"
+          git config user.email "${EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+      - name: Detect GPG availability
+        # Secrets can't be referenced from `if:` directly, so we promote
+        # their presence to a step output.
+        id: gpg
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ] && [ -n "$GPG_PASSPHRASE" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Import and unlock GPG key
+        if: steps.gpg.outputs.available == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # Pre-cache the passphrase in gpg-agent via a dummy sign so
+          # subsequent `git commit -S` / `git tag -s` don't prompt.
+          echo test | gpg --batch --yes --passphrase "$GPG_PASSPHRASE" \
+            --pinentry-mode loopback --sign > /dev/null
+          # Derive the signing key id from the imported key, no extra
+          # KEY_ID secret needed.
+          KEY_ID=$(gpg --list-secret-keys --with-colons \
+            | awk -F: '/^sec/{print $5; exit}')
+          git config user.signingkey "$KEY_ID"
+      - name: Plan release
+        run: uv tool run multicz plan --summary "$GITHUB_STEP_SUMMARY"
+      - name: Bump, commit, tag, push (signed)
+        id: bump_signed
+        if: steps.gpg.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          PLAN=$(uv tool run multicz bump --commit --tag --push --sign --output json)
+          echo "$PLAN" > /tmp/multicz-plan.json
+          BUMPED=$(echo "$PLAN" | jq -r '.bumps | keys | join(" ")')
+          BUMPED_JSON=$(echo "$PLAN" | jq -c '.bumps | keys')
+          echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
+          echo "bumped_json=$BUMPED_JSON" >> "$GITHUB_OUTPUT"
+          if [ -z "$BUMPED" ]; then
+            echo "no_bumps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no_bumps=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Bump, commit, tag, push
+        id: bump_unsigned
+        if: steps.gpg.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          PLAN=$(uv tool run multicz bump --commit --tag --push --output json)
+          echo "$PLAN" > /tmp/multicz-plan.json
+          BUMPED=$(echo "$PLAN" | jq -r '.bumps | keys | join(" ")')
+          BUMPED_JSON=$(echo "$PLAN" | jq -c '.bumps | keys')
+          echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
+          echo "bumped_json=$BUMPED_JSON" >> "$GITHUB_OUTPUT"
+          if [ -z "$BUMPED" ]; then
+            echo "no_bumps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no_bumps=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Resolve release outputs
+        id: bump
+        run: |
+          # Single quotes around the value preserve the JSON literal
+          # (`["a","b"]`) verbatim; double quotes would let bash strip
+          # the inner `"` characters, leaving an unquoted list that
+          # `fromJson(...)` later rejects when expanding the
+          # `pypi-publish` matrix.
+          if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
+            echo 'bumped=${{ steps.bump_signed.outputs.bumped }}' >> "$GITHUB_OUTPUT"
+            echo 'bumped_json=${{ steps.bump_signed.outputs.bumped_json }}' >> "$GITHUB_OUTPUT"
+            echo 'no_bumps=${{ steps.bump_signed.outputs.no_bumps }}' >> "$GITHUB_OUTPUT"
+          else
+            echo 'bumped=${{ steps.bump_unsigned.outputs.bumped }}' >> "$GITHUB_OUTPUT"
+            echo 'bumped_json=${{ steps.bump_unsigned.outputs.bumped_json }}' >> "$GITHUB_OUTPUT"
+            echo 'no_bumps=${{ steps.bump_unsigned.outputs.no_bumps }}' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ steps.bump.outputs.no_bumps }}" = "true" ]; then
+            echo "## Release: nothing to bump (planner found no pending bumps)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Release: tags pushed"
+            echo ""
+            echo "| Package | Version | Tag |"
+            echo "| --- | --- | --- |"
+            for pkg in ${{ steps.bump.outputs.bumped }}; do
+              version=$(uv tool run multicz get "$pkg")
+              echo "| \`$pkg\` | \`$version\` | \`${pkg}-v${version}\` |"
+            done
+            echo ""
+            echo "Signed commit/tags: \`${{ steps.gpg.outputs.available }}\`."
+            echo ""
+            echo "Artifact distribution (PyPI + GitHub Releases) handled by the \`pypi-publish\` job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Build and publish bumped packages to PyPI, then create the
+  # corresponding GitHub Releases with the wheel/sdist as attachments.
+  # Matrix over each bumped package so every PyPI project can register
+  # its OWN GitHub environment (`pypi-tripack-contracts`,
+  # `pypi-tripack-runtime`, `pypi-tripack-container`). This is required
+  # for Trusted Publishing: each PyPI project independently checks the
+  # OIDC `environment` claim, so a single shared `pypi` environment
+  # only works if every project happens to be configured with that
+  # exact name - which most orgs split per-package for blast-radius
+  # and reviewer-gate reasons.
+  #
+  # Failure of one package does NOT abort the others (`fail-fast: false`):
+  # if PyPI rejects `tripack-runtime` for any reason, `tripack-contracts`
+  # and `tripack-container` still publish, and the failed one can be
+  # re-run from the Actions UI.
+  pypi-publish:
+    name: pypi-publish (${{ matrix.component }})
+    needs: [detect, release]
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && needs.release.result == 'success'
+      && needs.release.outputs.no_bumps == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.release.outputs.bumped_json) }}
+    environment:
+      name: pypi-${{ matrix.component }}
+      url: https://pypi.org/project/${{ matrix.component }}/
+    permissions:
+      contents: write       # gh release create
+      id-token: write       # PyPI Trusted Publishing
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # Pull the release commit + tags multicz just pushed so the
+          # wheel metadata carries the freshly bumped version.
+          ref: main
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install multicz
+        run: uv tool install multicz
+      - name: Build wheel and sdist for ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          uv build --package "${{ matrix.component }}" --out-dir dist
+          ls -l dist
+      - name: Publish ${{ matrix.component }} to PyPI
+        # Uses Trusted Publishing (OIDC) keyed to the per-package
+        # environment `pypi-${{ matrix.component }}`. Falls back to
+        # `PYPI_API_TOKEN` if defined as an environment secret.
+        # `skip-existing` is kept to make the workflow resumable when a
+        # re-run already uploaded the same version.
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+      - name: Create GitHub release for ${{ matrix.component }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pkg="${{ matrix.component }}"
+          version=$(uv tool run multicz get "$pkg")
+          tag="${pkg}-v${version}"
+          notes=$(uv tool run multicz release-notes --tag "$tag")
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes "$notes" \
+            dist/${pkg//-/_}-${version}*
+      - name: Write step summary
+        if: always()
+        run: |
+          pkg="${{ matrix.component }}"
+          if [ "${{ job.status }}" != "success" ]; then
+            echo "## PyPI publish - \`$pkg\`: failed (see logs)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          version=$(uv tool run multicz get "$pkg")
+          {
+            echo "## PyPI publish - \`$pkg\`"
+            echo ""
+            echo "- Version: \`$version\`"
+            echo "- PyPI : https://pypi.org/project/${pkg}/${version}/"
+            echo "- GitHub: https://github.com/goabonga/tripack/releases/tag/${pkg}-v${version}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Build the Zensical site and deploy it to GitHub Pages. Gated on
+  # any successful release bump: the site embeds version numbers and
+  # changelog content, so every bump invalidates the rendered output
+  # even when no markdown file was touched in the same push. Runs in
+  # parallel with `pypi-publish` - the site documents the source at
+  # the tagged commit, not the PyPI artifact, so it does not need
+  # PyPI to be live first.
+  docs:
+    name: docs
+    needs: [detect, release]
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && needs.release.result == 'success'
+      && needs.release.outputs.no_bumps == 'false'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Pull the release commit + tags multicz just pushed so the
+          # site reflects the freshly published versions.
+          ref: main
+      - uses: actions/configure-pages@v6
+        with:
+          enablement: true
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install Zensical (doc group)
+        # `--only-group doc` installs the `doc` dependency-group from
+        # pyproject.toml without pulling the dev group or the workspace
+        # member packages - Zensical does not import any tripack code.
+        run: uv sync --frozen --only-group doc
+      - name: Build site
+        run: uv run zensical build --clean
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            {
+              echo "## Docs deployed"
+              echo ""
+              echo "Bumped this run: \`${{ needs.release.outputs.bumped }}\`"
+              echo ""
+              echo "Site URL: ${{ steps.deployment.outputs.page_url }}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Docs deployment failed (see logs)" >> "$GITHUB_STEP_SUMMARY"
+          fi
