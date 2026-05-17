@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Chris <goabonga@pm.me>
 
-"""Unit tests for the transient resolver."""
+"""Unit tests for the resolver: transient and singleton lifecycles."""
 
 from __future__ import annotations
 
@@ -10,7 +10,11 @@ from typing import Any
 
 import pytest
 
-from tripack_contracts import CircularDependencyError, ResolutionError
+from tripack_contracts import (
+    CircularDependencyError,
+    Lifecycle,
+    ResolutionError,
+)
 from tripack_contracts import Resolver as ResolverProtocol
 from tripack_runtime import (
     Binding,
@@ -263,3 +267,274 @@ def test_aresolve_detects_cycles() -> None:
     with pytest.raises(CircularDependencyError) as exc_info:
         asyncio.run(_aresolve_cycle_trigger())
     assert exc_info.value.cycle == (_Clock, _Cache, _Clock)
+
+
+# --- singleton lifecycle --------------------------------------------------
+
+
+class _Closeable:
+    """Test stand-in: tracks how often :meth:`close` was called."""
+
+    def __init__(self) -> None:
+        """Start with zero observed close calls."""
+        self.close_calls = 0
+
+    def close(self) -> None:
+        """Bump the call counter; idempotent like the real contract."""
+        self.close_calls += 1
+
+
+class _AsyncCloseable:
+    """Test stand-in: tracks ``aclose`` calls without doing real I/O."""
+
+    def __init__(self) -> None:
+        """Start with zero observed aclose calls."""
+        self.aclose_calls = 0
+
+    async def aclose(self) -> None:
+        """Bump the call counter; idempotent like the real contract."""
+        self.aclose_calls += 1
+
+
+class _PlainService:
+    """Test stand-in with no teardown method: nothing to register."""
+
+
+def test_resolve_returns_same_singleton_instance_across_calls() -> None:
+    """SINGLETON: the cached instance is returned on every subsequent call."""
+    graph = DependencyGraph()
+    graph.register(Binding(token=_Clock, factory=_Clock, lifecycle=Lifecycle.SINGLETON))
+    resolver = Resolver(graph)
+    first = resolver.resolve(_Clock)
+    second = resolver.resolve(_Clock)
+    assert first is second
+
+
+def test_resolve_calls_singleton_factory_exactly_once() -> None:
+    """The factory runs once even when ``resolve`` is called many times."""
+    factory_calls: list[None] = []
+
+    def _factory() -> _Clock:
+        factory_calls.append(None)
+        return _Clock()
+
+    graph = DependencyGraph()
+    graph.register(
+        Binding(token=_Clock, factory=_factory, lifecycle=Lifecycle.SINGLETON)
+    )
+    resolver = Resolver(graph)
+    for _ in range(5):
+        resolver.resolve(_Clock)
+    assert len(factory_calls) == 1
+
+
+def test_singleton_factory_error_does_not_poison_the_cache() -> None:
+    """A factory that raises leaves the cache empty: the next call retries."""
+    attempt = {"count": 0}
+
+    def _factory() -> _Clock:
+        attempt["count"] += 1
+        if attempt["count"] == 1:
+            raise RuntimeError("first call fails")
+        return _Clock()
+
+    graph = DependencyGraph()
+    graph.register(
+        Binding(token=_Clock, factory=_factory, lifecycle=Lifecycle.SINGLETON)
+    )
+    resolver = Resolver(graph)
+    with pytest.raises(RuntimeError, match="first call fails"):
+        resolver.resolve(_Clock)
+    # Second call succeeds and populates the cache.
+    instance = resolver.resolve(_Clock)
+    assert isinstance(instance, _Clock)
+    assert attempt["count"] == 2
+
+
+def test_singleton_self_referential_factory_raises_a_cycle_error() -> None:
+    """A SINGLETON whose factory recursively resolves itself is a cycle."""
+    graph = DependencyGraph()
+    resolver: Resolver
+
+    def _factory() -> Any:
+        resolver.resolve(_Clock)
+
+    graph.register(
+        Binding(token=_Clock, factory=_factory, lifecycle=Lifecycle.SINGLETON)
+    )
+    resolver = Resolver(graph)
+    with pytest.raises(CircularDependencyError) as exc_info:
+        resolver.resolve(_Clock)
+    assert exc_info.value.cycle == (_Clock, _Clock)
+    # Cycle prevented construction; cache stays empty.
+    assert resolver.teardowns() == ()
+
+
+def test_resolve_registers_closeable_singleton_for_teardown() -> None:
+    """A SINGLETON exposing ``close`` lands in the teardown registry.
+
+    Also smoke-tests the stand-in: calling ``close`` on the
+    registered target bumps its counter, which is the shape
+    3.9's propagation will rely on.
+    """
+    graph = DependencyGraph()
+    graph.register(
+        Binding(token=_Closeable, factory=_Closeable, lifecycle=Lifecycle.SINGLETON)
+    )
+    resolver = Resolver(graph)
+    instance = resolver.resolve(_Closeable)
+    assert resolver.teardowns() == (instance,)
+    instance.close()
+    assert instance.close_calls == 1
+
+
+async def _resolve_then_aclose_async_closeable() -> int:
+    """Coroutine helper covered by the async closeable registration test."""
+    graph = DependencyGraph()
+    graph.register(
+        Binding(
+            token=_AsyncCloseable,
+            factory=_AsyncCloseable,
+            lifecycle=Lifecycle.SINGLETON,
+        )
+    )
+    resolver = Resolver(graph)
+    instance = resolver.resolve(_AsyncCloseable)
+    assert resolver.teardowns() == (instance,)
+    await instance.aclose()
+    return instance.aclose_calls
+
+
+def test_resolve_registers_async_closeable_singleton_for_teardown() -> None:
+    """A SINGLETON exposing ``aclose`` lands in the teardown registry too.
+
+    Smoke-tests the stand-in by awaiting ``aclose`` on the
+    registered target, the shape 3.9's propagation will rely on.
+    """
+    assert asyncio.run(_resolve_then_aclose_async_closeable()) == 1
+
+
+def test_resolve_does_not_register_a_plain_singleton_for_teardown() -> None:
+    """A SINGLETON without close/aclose is not added to the teardown list."""
+    graph = DependencyGraph()
+    graph.register(
+        Binding(
+            token=_PlainService,
+            factory=_PlainService,
+            lifecycle=Lifecycle.SINGLETON,
+        )
+    )
+    resolver = Resolver(graph)
+    resolver.resolve(_PlainService)
+    assert resolver.teardowns() == ()
+
+
+def test_resolve_does_not_register_transient_closeables() -> None:
+    """A TRANSIENT instance is never registered for teardown, even if closeable."""
+    graph = DependencyGraph()
+    graph.register(
+        Binding(token=_Closeable, factory=_Closeable, lifecycle=Lifecycle.TRANSIENT)
+    )
+    resolver = Resolver(graph)
+    resolver.resolve(_Closeable)
+    resolver.resolve(_Closeable)
+    assert resolver.teardowns() == ()
+
+
+def test_teardowns_preserves_insertion_order_across_singletons() -> None:
+    """Multiple SINGLETONS are registered in construction order."""
+    graph = DependencyGraph()
+    graph.register(
+        Binding(token=_Closeable, factory=_Closeable, lifecycle=Lifecycle.SINGLETON)
+    )
+    graph.register(
+        Binding(
+            token=_AsyncCloseable,
+            factory=_AsyncCloseable,
+            lifecycle=Lifecycle.SINGLETON,
+        )
+    )
+    resolver = Resolver(graph)
+    first = resolver.resolve(_Closeable)
+    second = resolver.resolve(_AsyncCloseable)
+    assert resolver.teardowns() == (first, second)
+
+
+def test_teardowns_records_each_singleton_only_once() -> None:
+    """Cache hits do not re-register a singleton for teardown."""
+    graph = DependencyGraph()
+    graph.register(
+        Binding(token=_Closeable, factory=_Closeable, lifecycle=Lifecycle.SINGLETON)
+    )
+    resolver = Resolver(graph)
+    for _ in range(3):
+        resolver.resolve(_Closeable)
+    assert len(resolver.teardowns()) == 1
+
+
+def test_teardowns_returns_an_immutable_snapshot() -> None:
+    """The returned tuple cannot be used to mutate the underlying list."""
+    graph = DependencyGraph()
+    graph.register(
+        Binding(token=_Closeable, factory=_Closeable, lifecycle=Lifecycle.SINGLETON)
+    )
+    resolver = Resolver(graph)
+    resolver.resolve(_Closeable)
+    snapshot = resolver.teardowns()
+    # snapshot is a tuple; verifying immutability via type rather than try-except.
+    assert isinstance(snapshot, tuple)
+
+
+# --- singleton via aresolve -----------------------------------------------
+
+
+async def _aresolve_singleton_twice() -> tuple[_Clock, _Clock]:
+    """Coroutine helper covered by :func:`test_aresolve_returns_same_singleton`."""
+    graph = DependencyGraph()
+    graph.register(
+        Binding(
+            token=_Clock,
+            async_factory=_async_clock_factory,
+            lifecycle=Lifecycle.SINGLETON,
+        )
+    )
+    resolver = Resolver(graph)
+    first = await resolver.aresolve(_Clock)
+    second = await resolver.aresolve(_Clock)
+    return first, second
+
+
+def test_aresolve_returns_same_singleton_instance_across_calls() -> None:
+    """SINGLETON via async factory caches the first instance."""
+    first, second = asyncio.run(_aresolve_singleton_twice())
+    assert first is second
+
+
+async def _aresolve_then_resolve_async_only_singleton() -> tuple[_Clock, _Clock]:
+    """Coroutine helper covered by :func:`test_resolve_can_read_async_built_singleton`.
+
+    Construct an async-only SINGLETON via ``aresolve`` then read it
+    back via the sync ``resolve``. The sync path normally rejects
+    async-only bindings, but a cache hit bypasses construction
+    entirely and returns the stored instance.
+    """
+    graph = DependencyGraph()
+    graph.register(
+        Binding(
+            token=_Clock,
+            async_factory=_async_clock_factory,
+            lifecycle=Lifecycle.SINGLETON,
+        )
+    )
+    resolver = Resolver(graph)
+    async_built = await resolver.aresolve(_Clock)
+    sync_observed = resolver.resolve(_Clock)
+    return async_built, sync_observed
+
+
+def test_resolve_can_read_an_async_built_singleton_from_the_cache() -> None:
+    """Once cached, an async-only SINGLETON is fetchable by sync ``resolve``."""
+    async_built, sync_observed = asyncio.run(
+        _aresolve_then_resolve_async_only_singleton()
+    )
+    assert async_built is sync_observed

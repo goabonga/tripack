@@ -18,25 +18,110 @@ class Resolver:
     async def aresolve[T](self, token: type[T]) -> T: ...
 ```
 
-## Transient lifecycle
-
-This commit ships the **transient** lifecycle: every call to
-`resolve` (or `aresolve`) invokes the factory and returns the
-result. There is no cache.
+## Lifecycles
 
 ```python
-graph = DependencyGraph()
+class Resolver:
+    def teardowns(self) -> tuple[Closeable | AsyncCloseable, ...]: ...
+```
+
+The resolver dispatches on `binding.lifecycle` for every call.
+Two lifecycles are supported today; `SCOPED` raises
+`NotImplementedError` and lands in 3.7.
+
+### Transient
+
+Every call to `resolve` (or `aresolve`) invokes the factory and
+returns a fresh result. There is no cache and no teardown
+registration.
+
+```python
 graph.register(Binding(token=Clock, factory=Clock))
 
-resolver = Resolver(graph)
 a = resolver.resolve(Clock)
 b = resolver.resolve(Clock)
 assert a is not b
 ```
 
-Singleton caching, scoped lifetimes, and teardown propagation
-arrive in 3.6, 3.7 and 3.9 respectively. Each plugs into the
-same dispatch entry point without changing the public surface.
+### Singleton
+
+The first call builds the instance and caches it; subsequent
+calls return the cached one. The cache check runs **before**
+the cycle-detection push, so a hit costs one dict lookup and
+does not touch the resolution stack.
+
+```python
+graph.register(
+    Binding(token=Clock, factory=Clock, lifecycle=Lifecycle.SINGLETON)
+)
+
+a = resolver.resolve(Clock)
+b = resolver.resolve(Clock)
+assert a is b
+```
+
+A factory that raises does NOT poison the cache: the next call
+retries. A SINGLETON whose factory recursively resolves itself
+trips the cycle detector and leaves the cache empty.
+
+#### Async-only SINGLETON, sync read
+
+A SINGLETON registered with `async_factory` (no sync `factory`)
+is normally rejected by sync `resolve`. Once `aresolve` has
+constructed it, the cache hit on subsequent `resolve` calls
+bypasses construction entirely and returns the cached instance.
+This is a feature: async-built singletons are still readable
+from sync code paths.
+
+```python
+async def make_clock() -> Clock:
+    return Clock()
+
+graph.register(
+    Binding(
+        token=Clock,
+        async_factory=make_clock,
+        lifecycle=Lifecycle.SINGLETON,
+    )
+)
+
+await resolver.aresolve(Clock)   # constructs and caches
+resolver.resolve(Clock)          # cache hit, returns the cached one
+```
+
+## Teardown registration
+
+When a SINGLETON is built and its instance exposes a `close`
+method (sync) or `aclose` method (async), the resolver appends
+it to an internal teardown list:
+
+```python
+graph.register(
+    Binding(
+        token=ConnectionPool,
+        factory=ConnectionPool,
+        lifecycle=Lifecycle.SINGLETON,
+    )
+)
+
+pool = resolver.resolve(ConnectionPool)
+assert resolver.teardowns() == (pool,)
+```
+
+`teardowns()` returns a tuple snapshot in **registration
+order**, which is also construction order. The eventual
+teardown propagation (3.9) will iterate this list in reverse so
+dependents are closed before the services they depend on.
+
+The classifier is structural (duck-typed): any instance with a
+callable `close` or `aclose` attribute qualifies. TRANSIENT
+instances are NEVER registered, even when they expose
+`close` - their lifetime is the caller's responsibility, and
+the runtime has no way to know when they go out of use.
+
+This commit only **collects** the targets. The actual `close` /
+`aclose` invocation, the LIFO ordering, and the cross-scope
+propagation arrive in 3.9.
 
 ## Sync vs async paths
 
