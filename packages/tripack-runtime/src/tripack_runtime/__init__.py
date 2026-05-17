@@ -16,6 +16,11 @@ from tripack_runtime.context import (
     current_context,
     resolution_scope,
 )
+from tripack_runtime.cycles import (
+    aguarded_resolving,
+    check_for_cycle,
+    guarded_resolving,
+)
 from tripack_runtime.graph import DependencyGraph
 
 __all__ = [
@@ -23,7 +28,10 @@ __all__ = [
     "DependencyGraph",
     "ResolutionContext",
     "__version__",
+    "aguarded_resolving",
     "aresolution_scope",
+    "check_for_cycle",
     "current_context",
+    "guarded_resolving",
     "resolution_scope",
 ]
