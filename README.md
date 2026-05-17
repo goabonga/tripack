@@ -11,6 +11,11 @@ container patterns across three packages. It demonstrates clean object wiring,
 decoupled services, reusable components, and maintainable application
 structure.
 
+## Documentation
+
+The project site is published from `main` to GitHub Pages:
+<https://goabonga.github.io/tripack/>.
+
 ## Packages
 
 The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)

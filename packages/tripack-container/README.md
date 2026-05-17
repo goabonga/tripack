@@ -23,6 +23,10 @@ uv add tripack-container
 pip install tripack-container
 ```
 
+## Documentation
+
+Project site: <https://goabonga.github.io/tripack/>.
+
 ## License
 
 MIT - see [LICENSE](https://github.com/goabonga/tripack/blob/main/LICENSE).

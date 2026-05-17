@@ -24,6 +24,10 @@ uv add tripack-contracts
 pip install tripack-contracts
 ```
 
+## Documentation
+
+Project site: <https://goabonga.github.io/tripack/>.
+
 ## License
 
 MIT - see [LICENSE](https://github.com/goabonga/tripack/blob/main/LICENSE).
