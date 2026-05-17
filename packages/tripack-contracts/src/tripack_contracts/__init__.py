@@ -9,9 +9,11 @@ any time without prior notice.
 """
 
 from tripack_contracts.__version__ import __version__
+from tripack_contracts.lifecycle import Lifecycle
 from tripack_contracts.types import DependencyToken
 
 __all__ = [
     "DependencyToken",
+    "Lifecycle",
     "__version__",
 ]
