@@ -22,11 +22,13 @@ from tripack_runtime.cycles import (
     guarded_resolving,
 )
 from tripack_runtime.graph import DependencyGraph
+from tripack_runtime.resolver import Resolver
 
 __all__ = [
     "Binding",
     "DependencyGraph",
     "ResolutionContext",
+    "Resolver",
     "__version__",
     "aguarded_resolving",
     "aresolution_scope",
