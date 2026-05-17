@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+[project]
+name = "tripack"
+version = "0.0.0"
+description = "Tripack is a compact Python project exploring dependency injection and IoC container patterns across three packages. It demonstrates clean object wiring, decoupled services, reusable components, and maintainable application structure."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Chris", email = "goabonga@pm.me" }]
+keywords = ["dependency-injection", "ioc", "container", "framework"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+tripack-contracts = { workspace = true }
+tripack-runtime = { workspace = true }
+tripack-container = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18",
+    "pre-commit>=4.0",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.13",
+    "tripack-contracts",
+    "tripack-runtime",
+    "tripack-container",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = ["-ra", "--strict-config", "--strict-markers", "--import-mode=importlib"]
+testpaths = ["packages"]
+
+[tool.coverage.report]
+# Drives `pytest --cov` and the CI matrix gate: any package below 90%
+# line coverage fails the build. Tune downward only with a written
+# justification in the PR description.
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "pragma: no cover",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+src = ["packages/tripack-contracts/src", "packages/tripack-runtime/src", "packages/tripack-container/src"]
+extend-exclude = [".venv", "dist", "build"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+warn_unreachable = true
+disallow_any_generics = true
+disallow_untyped_decorators = true
+no_implicit_reexport = true
+extra_checks = true
+# `explicit_package_bases` lets mypy disambiguate the three identical
+# `tests/test_version.py` modules under each package's `tests/` dir.
+explicit_package_bases = true
+# Tests are exercised by pytest; mypy focuses on the public surface.
+exclude = ["build/", "dist/", "site/", ".venv/", "tests/"]
