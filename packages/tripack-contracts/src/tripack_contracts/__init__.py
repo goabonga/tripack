@@ -10,6 +10,7 @@ any time without prior notice.
 
 from tripack_contracts.__version__ import __version__
 from tripack_contracts.closeable import AsyncCloseable, Closeable
+from tripack_contracts.config import BindingSpec, ContainerConfig
 from tripack_contracts.errors import (
     BindingError,
     CircularDependencyError,
@@ -28,9 +29,11 @@ __all__ = [
     "AsyncProvider",
     "AsyncResolver",
     "BindingError",
+    "BindingSpec",
     "CircularDependencyError",
     "Closeable",
     "ConfigurationError",
+    "ContainerConfig",
     "DependencyToken",
     "Lifecycle",
     "Provider",
