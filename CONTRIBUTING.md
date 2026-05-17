@@ -125,6 +125,16 @@ docs(contracts): clarify Scope lifecycle ordering
 Do not append `Co-Authored-By` trailers; the workflow expects a single
 authored release commit per push.
 
+## Deprecations
+
+Any commit that deprecates or removes a public symbol MUST follow the
+[stability and deprecation policy](https://github.com/goabonga/tripack/blob/main/docs/stability.md):
+announce with a `DeprecationWarning` in version `n + 1`, remove in
+`n + 2`. Removal commits are regular `feat:` (no `!`) - under the n+2
+contract, a removal after the warning window is not a breaking change
+and lands in a minor release. Reserve `feat!:` / `BREAKING CHANGE:`
+for changes that bypass the deprecation cycle.
+
 ## Releasing
 
 Releases are fully automated. On every push to `main`, the workflow runs

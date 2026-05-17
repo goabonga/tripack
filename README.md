@@ -16,6 +16,13 @@ structure.
 The project site is published from `main` to GitHub Pages:
 <https://goabonga.github.io/tripack/>.
 
+## Stability and deprecation policy
+
+Tripack follows [Semantic Versioning](https://semver.org/) and the
+standard Python `n + 2` deprecation cadence (announce + warn in one
+release, remove in the release after the next). Full policy:
+[`docs/stability.md`](https://github.com/goabonga/tripack/blob/main/docs/stability.md).
+
 ## Packages
 
 The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
