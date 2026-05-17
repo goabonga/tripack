@@ -23,17 +23,27 @@ from tripack_runtime.cycles import (
 )
 from tripack_runtime.graph import DependencyGraph
 from tripack_runtime.resolver import Resolver
+from tripack_runtime.scope import (
+    Scope,
+    alifetime_scope,
+    current_scope,
+    lifetime_scope,
+)
 
 __all__ = [
     "Binding",
     "DependencyGraph",
     "ResolutionContext",
     "Resolver",
+    "Scope",
     "__version__",
     "aguarded_resolving",
+    "alifetime_scope",
     "aresolution_scope",
     "check_for_cycle",
     "current_context",
+    "current_scope",
     "guarded_resolving",
+    "lifetime_scope",
     "resolution_scope",
 ]
