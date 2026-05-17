@@ -101,6 +101,48 @@ def test_scope_remember_does_not_register_plain_services() -> None:
     assert scope.teardowns() == ()
 
 
+def test_scope_remember_returns_the_instance_it_just_cached() -> None:
+    """First-write semantics: a fresh ``remember`` echoes back the input."""
+    scope = Scope()
+    instance = _Closeable()
+    returned = scope.remember(_Closeable, instance)
+    assert returned is instance
+
+
+def test_scope_remember_is_idempotent_for_a_repeated_instance() -> None:
+    """Re-registering the same (token, instance) is a no-op on cache and teardowns."""
+    scope = Scope()
+    instance = _Closeable()
+    first = scope.remember(_Closeable, instance)
+    second = scope.remember(_Closeable, instance)
+    assert first is instance
+    assert second is instance
+    assert scope.lookup(_Closeable) is instance
+    # Teardown registered exactly once, not twice.
+    assert scope.teardowns() == (instance,)
+
+
+def test_scope_remember_keeps_the_first_instance_on_conflict() -> None:
+    """Second ``remember`` for the same token discards the new instance.
+
+    Protects against a race where two coroutines both build a
+    SCOPED token after observing an empty cache; the first one
+    to reach ``remember`` wins, the second receives the canonical
+    instance back, and the orphaned second instance is the
+    caller's responsibility to close.
+    """
+    scope = Scope()
+    first = _Closeable()
+    second = _Closeable()
+    a = scope.remember(_Closeable, first)
+    b = scope.remember(_Closeable, second)
+    assert a is first
+    assert b is first
+    assert scope.lookup(_Closeable) is first
+    # Only the first wins the teardown registration.
+    assert scope.teardowns() == (first,)
+
+
 def test_scope_remember_preserves_insertion_order() -> None:
     """Multiple registrations appear in the order they were added."""
     scope = Scope()

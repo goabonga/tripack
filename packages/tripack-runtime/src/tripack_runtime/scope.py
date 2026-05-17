@@ -76,11 +76,31 @@ class Scope:
         """
         return self._cache.get(token, _MISSING)
 
-    def remember(self, token: DependencyToken, instance: Any) -> None:
-        """Cache ``instance`` under ``token`` and register teardown if applicable."""
+    def remember(self, token: DependencyToken, instance: Any) -> Any:
+        """Cache ``instance`` under ``token`` and return the canonical entry.
+
+        Idempotent: when ``token`` is already cached, the existing
+        entry wins. The cache is not overwritten, the teardown
+        list is not extended, and the existing instance is the
+        return value. The supplied ``instance`` is discarded in
+        that case - its lifetime is the caller's responsibility,
+        since the runtime cannot retroactively close a value the
+        factory already produced.
+
+        This is the protection against double-registration races:
+        two concurrent ``aresolve`` of the same SCOPED token can
+        both pass the cache miss check and both invoke their
+        factory; the first one to reach :meth:`remember` wins,
+        and the second receives the same canonical instance the
+        first one stored. Sync resolution is single-threaded
+        within one task, so the race only matters for async.
+        """
+        if token in self._cache:
+            return self._cache[token]
         self._cache[token] = instance
         if is_teardown_target(instance):
             self._teardowns.append(instance)
+        return instance
 
     def teardowns(self) -> tuple[Closeable | AsyncCloseable, ...]:
         """Snapshot of registered teardown targets in registration order.

@@ -183,8 +183,7 @@ class Resolver:
             return cached
         with guarded_resolving(ctx, token):
             instance = self._invoke_sync(binding)
-        self._cache_if_applicable(binding, token, instance)
-        return instance
+        return self._cache_if_applicable(binding, token, instance)
 
     async def _aresolve_in(self, ctx: ResolutionContext, token: DependencyToken) -> Any:
         binding = self._graph.lookup(token)
@@ -193,8 +192,7 @@ class Resolver:
             return cached
         async with aguarded_resolving(ctx, token):
             instance = await self._invoke_async(binding)
-        self._cache_if_applicable(binding, token, instance)
-        return instance
+        return self._cache_if_applicable(binding, token, instance)
 
     def _lookup_cached(self, binding: Binding, token: DependencyToken) -> Any:
         lifecycle = binding.lifecycle
@@ -213,12 +211,26 @@ class Resolver:
 
     def _cache_if_applicable(
         self, binding: Binding, token: DependencyToken, instance: Any
-    ) -> None:
+    ) -> Any:
+        """Cache ``instance`` per the binding's lifecycle and return canonical.
+
+        Idempotent: when a concurrent caller has already stored
+        a value for ``token`` between this call's cache-miss
+        read and the factory-completion write, the existing
+        entry wins. The freshly-built ``instance`` is discarded
+        and the canonical one is returned; the discarded
+        instance's teardown is NOT registered, since that would
+        be a duplicate. ``TRANSIENT`` is never cached, so the
+        input is returned as-is.
+        """
         lifecycle = binding.lifecycle
         if lifecycle == Lifecycle.SINGLETON:
+            if token in self._singletons:
+                return self._singletons[token]
             self._singletons[token] = instance
             self._register_teardown(instance)
-        elif lifecycle == Lifecycle.SCOPED:
+            return instance
+        if lifecycle == Lifecycle.SCOPED:
             # _lookup_cached raised ScopeError if no scope was active, so
             # current_scope() is guaranteed non-None here as long as the
             # caller did not close the scope mid-resolution. A ``cast``
@@ -226,7 +238,8 @@ class Resolver:
             # bandit flags as B101 (asserts are stripped under
             # ``python -O``, so they are not a robust runtime check).
             scope = cast("Scope", current_scope())
-            scope.remember(token, instance)
+            return scope.remember(token, instance)
+        return instance
 
     def _register_teardown(self, instance: Any) -> None:
         if is_teardown_target(instance):
