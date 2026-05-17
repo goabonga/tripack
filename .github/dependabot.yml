@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# Dependabot v2 configuration.
+#
+# The commit messages that Dependabot produces here are placeholders -
+# the `dependabot-rewrite` workflow re-classifies each commit based on
+# which files it touches and rewrites the prefix to the correct
+# Conventional Commits scope:
+#
+#     .github/workflows/*.yml                   → ci:
+#     packages/tripack-contracts/pyproject.toml → fix(contracts):
+#     packages/tripack-runtime/pyproject.toml   → fix(runtime):
+#     packages/tripack-container/pyproject.toml → fix(container):
+#     pyproject.toml (workspace root)           → chore(deps):
+#
+# The rewrite also re-signs the commits with the maintainer's GPG key
+# (via `GPG_PRIVATE_KEY` + `GPG_PASSPHRASE` Dependabot/repo secrets).
+# When those secrets are unset, the PR ships unmodified.
+
+version: 2
+
+updates:
+  # Python dependencies - uv workspace. Covers the runtime deps of each
+  # package plus the workspace-level dev/doc dependency-groups.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    ignore:
+      # Workspace members are resolved locally via
+      # `[tool.uv.sources] = { workspace = true }` in pyproject.toml,
+      # never from PyPI. Dependabot does not understand this and tries
+      # to look them up against the registry; the 404 cascades into a
+      # failure for the whole run. Skip them entirely - they will
+      # never need a version bump from Dependabot's perspective.
+      - dependency-name: "tripack-contracts"
+      - dependency-name: "tripack-runtime"
+      - dependency-name: "tripack-container"
+      # `hatchling` lives in the `[build-system].requires` table of the
+      # three packages. Dependabot's uv FileUpdater currently cannot
+      # write back to that table (PEP 517 build-system deps are read
+      # before the rest of pyproject.toml is parsed). Empirically the
+      # update aborts with `FileUpdater failed to update any files for:
+      # hatchling (unknown -> X.Y.Z)`, which fails the whole run. Pin
+      # bumps for hatchling are infrequent and we bump it by hand when
+      # needed; meanwhile pip-audit / osv-scanner still flag any CVEs
+      # in the installed copy via the workspace venv.
+      - dependency-name: "hatchling"
+    groups:
+      # Bundle routine dev/doc tooling bumps into a single weekly PR so
+      # the rebase workflow runs once instead of many times.
+      dev-tools:
+        applies-to: version-updates
+        patterns:
+          - "ruff"
+          - "mypy"
+          - "pytest*"
+          - "pre-commit"
+          - "zensical"
+    commit-message:
+      # Both fields get rewritten by the dependabot-rewrite workflow;
+      # `chore(deps)` is the safe fallback when the rewrite is skipped.
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # Pinned versions of GitHub Actions in `.github/workflows/*.yml`.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    groups:
+      # Roll up routine action bumps.
+      ci-actions:
+        applies-to: version-updates
+        patterns:
+          - "actions/*"
+          - "astral-sh/*"
+          - "google/*"
+          - "pypa/*"
+          - "codecov/*"
+          - "compilerla/*"
+          - "pre-commit/*"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
