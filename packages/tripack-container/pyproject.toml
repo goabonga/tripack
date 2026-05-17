@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+[project]
+name = "tripack-container"
+version = "0.0.0"
+description = "High-level IoC container API of the Tripack framework: declarations, wiring, modules and bootstrap."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Chris", email = "goabonga@pm.me" }]
+keywords = ["dependency-injection", "ioc", "container", "wiring"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
+]
+dependencies = [
+    "tripack-contracts",
+    "tripack-runtime",
+]
+
+[project.urls]
+Homepage = "https://github.com/goabonga/tripack"
+Source = "https://github.com/goabonga/tripack/tree/main/packages/tripack-container"
+Issues = "https://github.com/goabonga/tripack/issues"
+Changelog = "https://github.com/goabonga/tripack/blob/main/packages/tripack-container/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tripack_container"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/tripack_container",
+    "tests",
+    "README.md",
+    "CHANGELOG.md",
+]
