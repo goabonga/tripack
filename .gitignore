@@ -63,3 +63,5 @@ Thumbs.db
 # uv / build artefacts
 .python-version
 
+# Zensical build output
+site/

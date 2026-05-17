@@ -42,6 +42,9 @@ dev = [
     "tripack-runtime",
     "tripack-container",
 ]
+doc = [
+    "zensical",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
