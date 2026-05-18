@@ -8,3 +8,51 @@ site_author = "Chris"
 site_url = "https://goabonga.github.io/tripack/"
 repo_url = "https://github.com/goabonga/tripack"
 repo_name = "goabonga/tripack"
+
+# Navigation tree for the published site. Section order mirrors the
+# implementation phases (contracts -> runtime -> container) so a reader
+# who follows the menu top-to-bottom picks up the concepts in the same
+# order each layer was built. Within each section, pages are ordered by
+# progression of complexity rather than alphabetically:
+#
+# - Contracts:  data types -> enums -> Protocol pairs -> errors -> config schema
+# - Runtime:    binding data -> registry -> context -> cycle guard -> resolver -> scopes
+# - Container:  overview -> bindings -> builder -> composition -> advanced -> config loaders
+#
+# Concept overviews (DI, IoC, IoC container) and framework-neutral
+# examples land in 7.2 / 7.3 respectively and will be inserted under
+# their own top-level groups.
+nav = [
+    { "Introduction" = "index.md" },
+    { "Contracts" = [
+        { "Dependency tokens" = "contracts/tokens.md" },
+        { "Lifecycle" = "contracts/lifecycle.md" },
+        { "Providers" = "contracts/providers.md" },
+        { "Resolvers" = "contracts/resolver.md" },
+        { "Closeables" = "contracts/closeable.md" },
+        { "Errors" = "contracts/errors.md" },
+        { "Configuration schema" = "contracts/config-schema.md" },
+    ] },
+    { "Runtime" = [
+        { "Bindings" = "runtime/bindings.md" },
+        { "Dependency graph" = "runtime/dependency-graph.md" },
+        { "Resolution context" = "runtime/resolution-context.md" },
+        { "Cycle detection" = "runtime/cycles.md" },
+        { "Resolver" = "runtime/resolver.md" },
+        { "Scopes" = "runtime/scopes.md" },
+    ] },
+    { "Container" = [
+        { "Overview" = "container/index.md" },
+        { "Bindings" = "container/bindings.md" },
+        { "Builder" = "container/builder.md" },
+        { "Modules" = "container/modules.md" },
+        { "Provider helpers" = "container/provider-helpers.md" },
+        { "Constructor injection" = "container/constructor-injection.md" },
+        { "Scopes" = "container/scopes.md" },
+        { "Teardown" = "container/teardown.md" },
+        { "Configuration / TOML" = "container/config-toml.md" },
+        { "Configuration / JSON" = "container/config-json.md" },
+        { "Configuration / YAML" = "container/config-yaml.md" },
+    ] },
+    { "Stability & deprecation" = "stability.md" },
+]
