@@ -25,6 +25,9 @@ dependencies = [
     "tripack-runtime",
 ]
 
+[project.optional-dependencies]
+yaml = ["pyyaml>=6.0"]
+
 [project.urls]
 Homepage = "https://github.com/goabonga/tripack"
 Source = "https://github.com/goabonga/tripack/tree/main/packages/tripack-container"

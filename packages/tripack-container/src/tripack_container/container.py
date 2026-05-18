@@ -476,3 +476,22 @@ class Container:
         from tripack_container.loaders import load_json
 
         return load_json(path)
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "Container":
+        """Build a sealed container from a YAML configuration file.
+
+        Requires the optional ``yaml`` extra
+        (``pip install tripack-container[yaml]``). Without the
+        extra, the call raises
+        :class:`tripack_contracts.ConfigurationError` pointing at
+        the install command rather than the bare
+        :class:`ModuleNotFoundError`. With the extra, parsing
+        goes through :func:`yaml.safe_load` (so the file cannot
+        deserialise arbitrary Python objects) and the result
+        flows through the same validation pipeline as
+        :meth:`from_toml` and :meth:`from_json`.
+        """
+        from tripack_container.loaders import load_yaml
+
+        return load_yaml(path)

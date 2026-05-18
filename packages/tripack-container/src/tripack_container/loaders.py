@@ -250,3 +250,34 @@ def load_json(path: str | Path) -> "Container":
             f"Failed to parse JSON config at {path!r}: {exc}."
         ) from exc
     return build_container_from_config(data)
+
+
+def load_yaml(path: str | Path) -> "Container":
+    """Load and build a :class:`Container` from a YAML file.
+
+    Requires the optional ``yaml`` extra
+    (``pip install tripack-container[yaml]``), which pulls in
+    PyYAML. Without the extra, the import fails with a clear
+    :class:`tripack_contracts.ConfigurationError` pointing at
+    the install command rather than the bare
+    :class:`ModuleNotFoundError`. With the extra, the file is
+    parsed via :func:`yaml.safe_load` (so arbitrary Python
+    objects cannot be deserialised) and run through the same
+    :func:`build_container_from_config` pipeline as TOML and
+    JSON.
+    """
+    try:
+        import yaml
+    except ImportError as exc:
+        raise ConfigurationError(
+            "YAML support requires the optional 'yaml' extra: "
+            "install with `pip install tripack-container[yaml]`."
+        ) from exc
+    try:
+        with Path(path).open() as fp:
+            data = yaml.safe_load(fp)
+    except yaml.YAMLError as exc:
+        raise ConfigurationError(
+            f"Failed to parse YAML config at {path!r}: {exc}."
+        ) from exc
+    return build_container_from_config(data)
