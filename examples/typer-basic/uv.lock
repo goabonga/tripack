@@ -129,25 +129,25 @@ wheels = [
 
 [[package]]
 name = "tripack-container"
-version = "0.0.0"
-source = { editable = "../../packages/tripack-container" }
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "tripack-contracts" },
     { name = "tripack-runtime" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "pyyaml", marker = "extra == 'yaml'", specifier = ">=6.0" },
-    { name = "tripack-contracts", editable = "../../packages/tripack-contracts" },
-    { name = "tripack-runtime", editable = "../../packages/tripack-runtime" },
+sdist = { url = "https://files.pythonhosted.org/packages/eb/66/5b0385f2000bc3cbdf59d6140efdfc02bbf975b7504305f1582ae25caa3a/tripack_container-0.2.0.tar.gz", hash = "sha256:c5675e5b8636b24bbebc6e5b6418a6f57c4cecbabd41392a80bc5544f3764122", size = 29862, upload-time = "2026-05-18T15:33:45.522Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/53/7d/54091e09d90c8b9a2a06770af51c27632823a94a5ed5934482a55ff1c74f/tripack_container-0.2.0-py3-none-any.whl", hash = "sha256:2f68827efa6b6bda054eeb17430a5537937ce0567df71c10e8f7adbe95efe4f0", size = 18596, upload-time = "2026-05-18T15:33:43.82Z" },
 ]
-provides-extras = ["yaml"]
 
 [[package]]
 name = "tripack-contracts"
-version = "0.0.0"
-source = { editable = "../../packages/tripack-contracts" }
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/ef/dbdb961539c4d76e9a82628e3828533ac518a203bd12511249a5764024cb/tripack_contracts-0.2.0.tar.gz", hash = "sha256:9ba20a09e37c7e75dda52e53437d9d7796f2d63c8522f564e0ff04e5d3a9dc9a", size = 14070, upload-time = "2026-05-18T15:33:34.478Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/08/dcb72c04745cd2bb341480f6f8562c84e3e29dbaebfc3310987130729b8b/tripack_contracts-0.2.0-py3-none-any.whl", hash = "sha256:3fdf3c68c74a2a722242e384b0210d4eb3327654eccccefe7f6c7c9a9a8341f8", size = 11332, upload-time = "2026-05-18T15:33:32.612Z" },
+]
 
 [[package]]
 name = "tripack-example-typer"
@@ -165,7 +165,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "tripack-container", editable = "../../packages/tripack-container" },
+    { name = "tripack-container", specifier = ">=0.2.0" },
     { name = "typer", specifier = ">=0.15" },
 ]
 
@@ -174,14 +174,15 @@ dev = [{ name = "pytest", specifier = ">=8.3" }]
 
 [[package]]
 name = "tripack-runtime"
-version = "0.0.0"
-source = { editable = "../../packages/tripack-runtime" }
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "tripack-contracts" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "tripack-contracts", editable = "../../packages/tripack-contracts" }]
+sdist = { url = "https://files.pythonhosted.org/packages/dc/ae/1d4a21908b37aeb8cfb83d6bce7b5211712b468712467b88ce3a046401d0/tripack_runtime-0.2.0.tar.gz", hash = "sha256:c02d361a66a54e4d3de2b2c11de85a02e6ded705919d7a8d2b88ac14e27638e4", size = 27900, upload-time = "2026-05-18T15:33:33.246Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/85/d5dbed9b864533c616d1928673b2a4e4cb46d7b1a282b2c9994c3fad8570/tripack_runtime-0.2.0-py3-none-any.whl", hash = "sha256:7be075e2d49753a5c7bbeb6f6dcc672205ffd65db0de64e24f770b38a85d2fd4", size = 17422, upload-time = "2026-05-18T15:33:32.068Z" },
+]
 
 [[package]]
 name = "typer"

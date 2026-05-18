@@ -86,11 +86,3 @@ tests/
         v          Scope.aclose            request handler runs
   app.state.container       (SCOPED teardown)
 ```
-
-## Migrating to PyPI deps
-
-When Tripack v0.1.0 ships on PyPI, drop the
-``[tool.uv.sources]`` block from ``pyproject.toml`` - the
-``tripack-container`` entry under ``[project] dependencies``
-will then resolve against PyPI like any normal dependency.
-See the parent ``../README.md`` for the full migration note.

@@ -7,7 +7,7 @@ version = "0.0.0"
 description = "Tripack + FastAPI integration example: lifespan-bootstrapped container + Depends adapter."
 requires-python = ">=3.13"
 dependencies = [
-    "tripack-container",
+    "tripack-container>=0.2.0",
     "fastapi>=0.115",
     "uvicorn>=0.32",
 ]
@@ -30,16 +30,6 @@ build-backend = "hatchling.build"
 # simplest way to get the src layout on ``sys.path`` for both
 # pytest and the ``__main__`` entrypoint.
 packages = ["src/fastapi_basic"]
-
-[tool.uv.sources]
-# Local path sources during the pre-publication period. Each
-# entry would normally be removed once the matching package
-# is on PyPI - the ``[project] dependencies`` declaration
-# already references the same names. See ../README.md for
-# the migration plan.
-tripack-contracts = { path = "../../packages/tripack-contracts", editable = true }
-tripack-runtime = { path = "../../packages/tripack-runtime", editable = true }
-tripack-container = { path = "../../packages/tripack-container", editable = true }
 
 [tool.pytest.ini_options]
 minversion = "8.0"

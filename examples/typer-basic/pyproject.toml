@@ -7,7 +7,7 @@ version = "0.0.0"
 description = "Tripack + Typer integration example: container-backed CLI with command-dispatched services."
 requires-python = ">=3.13"
 dependencies = [
-    "tripack-container",
+    "tripack-container>=0.2.0",
     "typer>=0.15",
 ]
 
@@ -25,11 +25,6 @@ build-backend = "hatchling.build"
 # ``python -m typer_basic`` finds the package after
 # ``uv sync``. Not meant for distribution.
 packages = ["src/typer_basic"]
-
-[tool.uv.sources]
-tripack-contracts = { path = "../../packages/tripack-contracts", editable = true }
-tripack-runtime = { path = "../../packages/tripack-runtime", editable = true }
-tripack-container = { path = "../../packages/tripack-container", editable = true }
 
 [tool.pytest.ini_options]
 minversion = "8.0"

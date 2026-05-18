@@ -7,7 +7,7 @@ version = "0.0.0"
 description = "Tripack + Click integration example: container threaded through click.Context.obj."
 requires-python = ">=3.13"
 dependencies = [
-    "tripack-container",
+    "tripack-container>=0.2.0",
     "click>=8.1",
 ]
 
@@ -25,11 +25,6 @@ build-backend = "hatchling.build"
 # ``python -m click_basic`` finds the package after
 # ``uv sync``. Not meant for distribution.
 packages = ["src/click_basic"]
-
-[tool.uv.sources]
-tripack-contracts = { path = "../../packages/tripack-contracts", editable = true }
-tripack-runtime = { path = "../../packages/tripack-runtime", editable = true }
-tripack-container = { path = "../../packages/tripack-container", editable = true }
 
 [tool.pytest.ini_options]
 minversion = "8.0"

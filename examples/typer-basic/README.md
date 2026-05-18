@@ -59,11 +59,3 @@ src/typer_basic/
 tests/
 └── test_cli.py
 ```
-
-## Migrating to PyPI deps
-
-After Tripack v0.1.0 ships, drop the ``[tool.uv.sources]``
-block in ``pyproject.toml`` - the existing
-``tripack-container`` entry under ``[project] dependencies``
-will then resolve against PyPI. See ``../README.md`` for the
-full migration note.

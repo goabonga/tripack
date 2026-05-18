@@ -53,9 +53,3 @@ src/click_basic/
 tests/
 └── test_cli.py
 ```
-
-## Migrating to PyPI deps
-
-After Tripack v0.1.0 ships, drop the ``[tool.uv.sources]``
-block in ``pyproject.toml``. See ``../README.md`` for the
-full migration note.
