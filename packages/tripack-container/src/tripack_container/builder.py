@@ -33,6 +33,7 @@ from collections.abc import Awaitable, Callable
 from typing import Self, overload
 
 from tripack_container.container import Container, _make_binding
+from tripack_container.module import Module
 from tripack_contracts import Lifecycle
 from tripack_runtime import DependencyGraph
 
@@ -40,11 +41,15 @@ from tripack_runtime import DependencyGraph
 class ContainerBuilder:
     """Fluent builder that produces sealed :class:`Container` instances."""
 
-    __slots__ = ("_graph",)
+    __slots__ = ("_graph", "_installed_modules")
 
     def __init__(self) -> None:
-        """Start with an empty :class:`DependencyGraph`."""
+        """Start with an empty :class:`DependencyGraph` and no installed modules."""
         self._graph = DependencyGraph()
+        # Track installed modules by ``id()`` so a second
+        # ``install(same_instance)`` is a no-op without
+        # requiring modules to implement equality / hashing.
+        self._installed_modules: set[int] = set()
 
     # Async overload first: the broader ``Callable[..., T]`` would
     # otherwise mask ``Callable[..., Awaitable[T]]`` (overload-cannot-match).
@@ -93,6 +98,30 @@ class ContainerBuilder:
             auto_inject=auto_inject,
         )
         self._graph.register(binding)
+        return self
+
+    def install(self, module: Module) -> Self:
+        """Apply ``module`` to this builder and return ``self`` for chaining.
+
+        Idempotent per-instance: calling ``install`` twice with
+        the same :class:`Module` object is a no-op on the second
+        call (no double-registration, no double-side-effect).
+        Tracking is by :func:`id`, so two distinct instances of
+        the same module class are treated as separate modules
+        and both run - the graph's own idempotent
+        ``register`` then deduplicates the actual bindings if
+        they happen to match.
+
+        Composition is recursive: a module's ``register`` can
+        call ``builder.install(other_module)`` to pull in a
+        sub-module. The per-instance guard prevents the
+        diamond-install pitfall (two modules each installing a
+        common dependency module).
+        """
+        if id(module) in self._installed_modules:
+            return self
+        self._installed_modules.add(id(module))
+        module.register(self)
         return self
 
     def build(self) -> Container:
