@@ -12,5 +12,24 @@ from tripack_container.__version__ import __version__
 from tripack_container.builder import ContainerBuilder
 from tripack_container.container import Container
 from tripack_container.module import Module
+from tripack_container.providers import (
+    async_scoped,
+    async_singleton,
+    async_transient,
+    scoped,
+    singleton,
+    transient,
+)
 
-__all__ = ["Container", "ContainerBuilder", "Module", "__version__"]
+__all__ = [
+    "Container",
+    "ContainerBuilder",
+    "Module",
+    "__version__",
+    "async_scoped",
+    "async_singleton",
+    "async_transient",
+    "scoped",
+    "singleton",
+    "transient",
+]
