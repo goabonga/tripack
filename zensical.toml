@@ -59,5 +59,11 @@ nav = [
         { "Configuration / JSON" = "container/config-json.md" },
         { "Configuration / YAML" = "container/config-yaml.md" },
     ] },
+    { "Examples" = [
+        { "Basic container" = "examples/basic-container.md" },
+        { "Lifecycles" = "examples/lifecycles.md" },
+        { "Modules" = "examples/modules.md" },
+        { "Idempotent registration" = "examples/idempotent-registration.md" },
+    ] },
     { "Stability & deprecation" = "stability.md" },
 ]
