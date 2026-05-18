@@ -33,6 +33,9 @@ jobs:
       has_package_changes: ${{ steps.changed.outputs.has_package_changes }}
       docs_changed: ${{ steps.changed.outputs.docs_changed }}
       integration_changed: ${{ steps.changed.outputs.integration_changed }}
+      examples: ${{ steps.changed.outputs.examples }}
+      has_examples: ${{ steps.changed.outputs.has_examples }}
+      examples_changed: ${{ steps.changed.outputs.examples_changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -90,6 +93,31 @@ jobs:
             INTEGRATION=true
           fi
           echo "integration_changed=$INTEGRATION" >> "$GITHUB_OUTPUT"
+          # 4. Examples detection. The list is discovered dynamically
+          #    (each ``examples/<name>`` becomes a matrix entry) so a
+          #    new example automatically enrols in the gate, and a
+          #    git-diff against ``examples/`` answers "did the example
+          #    itself change?". Combined with ``has_package_changes``
+          #    for the "did the core change?" signal so a core API
+          #    break also triggers the examples job.
+          if [ -d examples ]; then
+            EXAMPLES=$(find examples -maxdepth 1 -mindepth 1 -type d -printf '%f\n' \
+              | jq -R . | jq -sc .)
+          else
+            EXAMPLES='[]'
+          fi
+          echo "examples=$EXAMPLES" >> "$GITHUB_OUTPUT"
+          if [ "$EXAMPLES" = "[]" ] || [ -z "$EXAMPLES" ]; then
+            echo "has_examples=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_examples=true" >> "$GITHUB_OUTPUT"
+          fi
+          if git diff --quiet "$DOCS_BASE" HEAD -- examples; then
+            EXAMPLES_CHANGED=false
+          else
+            EXAMPLES_CHANGED=true
+          fi
+          echo "examples_changed=$EXAMPLES_CHANGED" >> "$GITHUB_OUTPUT"
           {
             echo "## Detected changes"
             echo ""
@@ -98,6 +126,8 @@ jobs:
             echo "| Packages | \`$PACKAGES\` |"
             echo "| Docs changed | \`$DOCS\` (vs \`$DOCS_BASE\`) |"
             echo "| Integration changed | \`$INTEGRATION\` (vs \`$DOCS_BASE\`) |"
+            echo "| Examples | \`$EXAMPLES\` |"
+            echo "| Examples changed | \`$EXAMPLES_CHANGED\` (vs \`$DOCS_BASE\`) |"
             echo "| Package reference | \`$REF\` |"
             echo "| Event | \`${{ github.event_name }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -316,6 +346,54 @@ jobs:
             STATUS="fail - integration tests reported failures (see logs)"
           fi
           echo "## Integration: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+  # Integration examples. Matrix per ``examples/*`` directory; each
+  # entry is a standalone project with its own ``pyproject.toml`` and
+  # ``uv.lock`` (the ``examples`` directory is intentionally NOT a uv
+  # workspace member). The job runs ``uv sync --frozen`` inside the
+  # example dir to install Tripack from the local path sources, then
+  # ``pytest`` to verify the integration still works.
+  #
+  # Gate: runs when any package changed (a core API change may have
+  # broken an example) OR when the examples themselves changed.
+  #
+  # NOT in ``release.needs``: the examples are documentation-style
+  # demos, not a release-blocking gate. A core release can ship with
+  # an out-of-date example; the breakage shows up as a CI red flag
+  # for a follow-up PR rather than as a blocker on the underlying
+  # package release.
+  examples:
+    name: examples (${{ matrix.example }})
+    needs: detect
+    if: >-
+      needs.detect.outputs.has_examples == 'true'
+      && (needs.detect.outputs.has_package_changes == 'true'
+          || needs.detect.outputs.examples_changed == 'true')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: ${{ fromJson(needs.detect.outputs.examples) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync example
+        working-directory: examples/${{ matrix.example }}
+        run: uv sync --frozen
+      - name: Run example tests
+        working-directory: examples/${{ matrix.example }}
+        run: uv run --group dev pytest
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - integration example builds and tests green"
+          else
+            STATUS="fail - example failed to sync or its tests failed (see logs)"
+          fi
+          echo "## Examples - \`${{ matrix.example }}\`: $STATUS" >> "$GITHUB_STEP_SUMMARY"
 
   # Static security analysis of the Python source code (Bandit). Single
   # workspace-level run - Bandit scans all `packages/*/src` together.
