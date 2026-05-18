@@ -21,9 +21,10 @@ factored at the module level so both ``Container.bind`` and
 """
 
 import inspect
+import types
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
-from typing import Any, cast, overload
+from typing import Any, Self, cast, overload
 
 from tripack_container.providers import INJECT_ATTR, LIFECYCLE_ATTR
 from tripack_contracts import BindingError, Lifecycle, ResolutionError
@@ -381,3 +382,60 @@ class Container:
         """
         async with alifetime_scope() as s:
             yield s
+
+    def close(self) -> None:
+        """Close every registered SINGLETON teardown target in LIFO order.
+
+        Delegates to the underlying :class:`Resolver.close`,
+        which iterates the singleton teardown registry in
+        reverse registration order, calling sync ``close`` on
+        each target and collecting errors into a single
+        :class:`ExceptionGroup`. Idempotent (second call is a
+        no-op). Async-only teardown targets are skipped silently
+        on this path - use :meth:`aclose` for them.
+        """
+        self._resolver.close()
+
+    async def aclose(self) -> None:
+        """Asynchronously close every registered SINGLETON teardown target.
+
+        Delegates to :class:`Resolver.aclose`: awaits ``aclose``
+        on each target in reverse registration order, falling
+        back to sync ``close`` for sync-only targets, and
+        surfaces collected errors as a single
+        :class:`ExceptionGroup`. Idempotent the same way as
+        :meth:`close`.
+        """
+        await self._resolver.aclose()
+
+    def __enter__(self) -> Self:
+        """Return ``self`` so the container can be used as a sync context manager.
+
+        Pairs with :meth:`__exit__` to invoke :meth:`close` on
+        block exit. SCOPED bindings still need their own
+        :meth:`scope` block; this manager only covers the
+        container-level (SINGLETON) teardown.
+        """
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
+    ) -> None:
+        """Auto-close on block exit, even when the body raises."""
+        self.close()
+
+    async def __aenter__(self) -> Self:
+        """Async counterpart of :meth:`__enter__`."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
+    ) -> None:
+        """Async counterpart of :meth:`__exit__`: ``await``s :meth:`aclose`."""
+        await self.aclose()
