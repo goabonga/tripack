@@ -11,5 +11,6 @@ are internal and may change at any time without prior notice.
 from tripack_container.__version__ import __version__
 from tripack_container.builder import ContainerBuilder
 from tripack_container.container import Container
+from tripack_container.module import Module
 
-__all__ = ["Container", "ContainerBuilder", "__version__"]
+__all__ = ["Container", "ContainerBuilder", "Module", "__version__"]
