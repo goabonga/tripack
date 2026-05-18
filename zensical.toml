@@ -24,6 +24,11 @@ repo_name = "goabonga/tripack"
 # their own top-level groups.
 nav = [
     { "Introduction" = "index.md" },
+    { "Concepts" = [
+        { "Dependency injection" = "concepts/dependency-injection.md" },
+        { "Inversion of control" = "concepts/inversion-of-control.md" },
+        { "IoC container" = "concepts/ioc-container.md" },
+    ] },
     { "Contracts" = [
         { "Dependency tokens" = "contracts/tokens.md" },
         { "Lifecycle" = "contracts/lifecycle.md" },
