@@ -26,6 +26,7 @@ the loader never leaks a partially populated container.
 """
 
 import importlib
+import json
 import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -227,4 +228,25 @@ def load_toml(path: str | Path) -> "Container":
     """
     with Path(path).open("rb") as fp:
         data = tomllib.load(fp)
+    return build_container_from_config(data)
+
+
+def load_json(path: str | Path) -> "Container":
+    """Load and build a :class:`Container` from a JSON file.
+
+    Uses the standard-library :mod:`json` (no extra
+    dependency). A malformed JSON file raises
+    :class:`tripack_contracts.ConfigurationError` with the
+    decoder's message attached so the caller does not have to
+    catch :class:`json.JSONDecodeError` separately. Otherwise
+    the structural validation and builder assembly mirror
+    :func:`load_toml`.
+    """
+    try:
+        with Path(path).open() as fp:
+            data = json.load(fp)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(
+            f"Failed to parse JSON config at {path!r}: {exc}."
+        ) from exc
     return build_container_from_config(data)
