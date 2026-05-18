@@ -460,3 +460,19 @@ class Container:
         from tripack_container.loaders import load_toml
 
         return load_toml(path)
+
+    @classmethod
+    def from_json(cls, path: str | Path) -> "Container":
+        """Build a sealed container from a JSON configuration file.
+
+        Mirrors :meth:`from_toml`: same
+        :class:`tripack_contracts.ContainerConfig` schema, same
+        validation pipeline, same import semantics. A malformed
+        JSON file surfaces as
+        :class:`tripack_contracts.ConfigurationError` (the
+        underlying :class:`json.JSONDecodeError` is wrapped
+        with a clearer message and the file path attached).
+        """
+        from tripack_container.loaders import load_json
+
+        return load_json(path)
