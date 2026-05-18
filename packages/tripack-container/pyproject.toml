@@ -3,7 +3,7 @@
 
 [project]
 name = "tripack-container"
-version = "0.0.0"
+version = "0.1.0"
 description = "High-level IoC container API of the Tripack framework: declarations, wiring, modules and bootstrap."
 readme = "README.md"
 requires-python = ">=3.13"

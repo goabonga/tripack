@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "git_head": "115b1871ae773162ce0c595d9ec930a620b1233b",
+  "git_head_short": "115b187",
+  "timestamp": "2026-05-18T15:18:22Z",
+  "components": {
+    "tripack-contracts": {
+      "version": "0.1.0",
+      "tag": "tripack-contracts-v0.1.0",
+      "tag_sha": null
+    },
+    "tripack-runtime": {
+      "version": "0.1.0",
+      "tag": "tripack-runtime-v0.1.0",
+      "tag_sha": null
+    },
+    "tripack-container": {
+      "version": "0.1.0",
+      "tag": "tripack-container-v0.1.0",
+      "tag_sha": null
+    }
+  }
+}
