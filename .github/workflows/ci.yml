@@ -32,6 +32,7 @@ jobs:
       packages: ${{ steps.changed.outputs.packages }}
       has_package_changes: ${{ steps.changed.outputs.has_package_changes }}
       docs_changed: ${{ steps.changed.outputs.docs_changed }}
+      integration_changed: ${{ steps.changed.outputs.integration_changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -78,6 +79,17 @@ jobs:
             DOCS=true
           fi
           echo "docs_changed=$DOCS" >> "$GITHUB_OUTPUT"
+          # 3. Integration suite detection. Same git-diff approach as
+          #    docs: the integration tests live OUTSIDE multicz's
+          #    per-component tracking (no version, no tag), so we
+          #    diff `tests/integration/` directly against the same
+          #    base ref the docs check uses.
+          if git diff --quiet "$DOCS_BASE" HEAD -- tests/integration; then
+            INTEGRATION=false
+          else
+            INTEGRATION=true
+          fi
+          echo "integration_changed=$INTEGRATION" >> "$GITHUB_OUTPUT"
           {
             echo "## Detected changes"
             echo ""
@@ -85,6 +97,7 @@ jobs:
             echo "| --- | --- |"
             echo "| Packages | \`$PACKAGES\` |"
             echo "| Docs changed | \`$DOCS\` (vs \`$DOCS_BASE\`) |"
+            echo "| Integration changed | \`$INTEGRATION\` (vs \`$DOCS_BASE\`) |"
             echo "| Package reference | \`$REF\` |"
             echo "| Event | \`${{ github.event_name }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -266,6 +279,44 @@ jobs:
           fi
           echo "## Tests - \`${{ matrix.component }}\`: $STATUS" >> "$GITHUB_STEP_SUMMARY"
 
+  # Cross-package integration tests. Single workspace-level run (no
+  # matrix): the suite under `tests/integration/` exercises the public
+  # API across the three packages end-to-end, so per-component sharding
+  # would lose the very wiring the suite is meant to validate.
+  #
+  # Gate: runs when ANY package changed (the public API may have moved)
+  # OR when the integration tests themselves changed. Skipped on
+  # docs-only or chore-only pushes that touch neither.
+  #
+  # No coverage gate here: the per-component `test` matrix already
+  # enforces 100% line coverage per package. The integration job adds
+  # scenario confidence on top of that, not a second coverage budget.
+  integration:
+    name: integration
+    needs: detect
+    if: >-
+      needs.detect.outputs.has_package_changes == 'true'
+      || needs.detect.outputs.integration_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --frozen --all-packages
+      - name: Run integration tests
+        run: uv run pytest tests/integration/
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="pass - cross-package integration suite is green"
+          else
+            STATUS="fail - integration tests reported failures (see logs)"
+          fi
+          echo "## Integration: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
   # Static security analysis of the Python source code (Bandit). Single
   # workspace-level run - Bandit scans all `packages/*/src` together.
   # Default severity floor (LOW) for now; tune via `--severity-level`
@@ -374,7 +425,20 @@ jobs:
   # `pypi` environment for OIDC scoping and per-env reviewer gates.
   release:
     name: release
-    needs: [detect, license-headers, type-check, lint, test, bandit, pip-audit, osv-scanner]
+    needs:
+      - detect
+      - license-headers
+      - type-check
+      - lint
+      - test
+      - integration
+      - bandit
+      - pip-audit
+      - osv-scanner
+    # `has_package_changes` already implies every upstream check ran
+    # (license-headers / type-check / lint / test / integration / bandit /
+    # pip-audit / osv-scanner). Release gates on that single condition;
+    # `needs` will block automatically on any upstream failure.
     if: >-
       github.event_name == 'push'
       && github.ref == 'refs/heads/main'
