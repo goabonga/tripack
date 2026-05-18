@@ -32,7 +32,7 @@ clock = container.resolve(Clock)
 from collections.abc import Awaitable, Callable
 from typing import Self, overload
 
-from tripack_container.container import Container, _make_binding
+from tripack_container.container import Container, _make_binding, _resolve_lifecycle
 from tripack_container.module import Module
 from tripack_contracts import Lifecycle
 from tripack_runtime import DependencyGraph
@@ -59,7 +59,7 @@ class ContainerBuilder:
         token: type[T],
         factory: Callable[..., Awaitable[T]],
         *,
-        lifecycle: Lifecycle = ...,
+        lifecycle: Lifecycle | None = ...,
         auto_inject: bool = ...,
     ) -> Self: ...
 
@@ -69,7 +69,7 @@ class ContainerBuilder:
         token: type[T],
         factory: Callable[..., T],
         *,
-        lifecycle: Lifecycle = ...,
+        lifecycle: Lifecycle | None = ...,
         auto_inject: bool = ...,
     ) -> Self: ...
 
@@ -78,14 +78,17 @@ class ContainerBuilder:
         token: type[T],
         factory: Callable[..., T] | Callable[..., Awaitable[T]],
         *,
-        lifecycle: Lifecycle = Lifecycle.TRANSIENT,
+        lifecycle: Lifecycle | None = None,
         auto_inject: bool = False,
     ) -> Self:
         """Register a binding and return ``self`` for fluent chaining.
 
         Same auto-detection and idempotence semantics as
-        :meth:`Container.bind`. The return value is the builder
-        itself, so calls can be chained:
+        :meth:`Container.bind`, including the provider-helper
+        ``__tripack_lifecycle__`` marker pick-up when
+        ``lifecycle`` is left at its ``None`` default. The
+        return value is the builder itself, so calls can be
+        chained:
 
         .. code-block:: python
 
@@ -94,7 +97,7 @@ class ContainerBuilder:
         binding = _make_binding(
             token,
             factory,
-            lifecycle=lifecycle,
+            lifecycle=_resolve_lifecycle(factory, lifecycle),
             auto_inject=auto_inject,
         )
         self._graph.register(binding)

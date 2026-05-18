@@ -24,8 +24,29 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any, cast, overload
 
+from tripack_container.providers import LIFECYCLE_ATTR
 from tripack_contracts import BindingError, Lifecycle
 from tripack_runtime import Binding, DependencyGraph, Resolver
+
+
+def _resolve_lifecycle(
+    factory: Callable[..., Any] | Callable[..., Awaitable[Any]],
+    explicit: Lifecycle | None,
+) -> Lifecycle:
+    """Pick the binding's effective lifecycle.
+
+    ``explicit`` (from the ``lifecycle=`` keyword) always wins
+    when it is not ``None``. Otherwise the factory is inspected
+    for a ``__tripack_lifecycle__`` marker (set by the provider
+    helpers in :mod:`tripack_container.providers`); falling back
+    to ``Lifecycle.TRANSIENT`` when no marker is present.
+    """
+    if explicit is not None:
+        return explicit
+    tagged = getattr(factory, LIFECYCLE_ATTR, None)
+    if isinstance(tagged, Lifecycle):
+        return tagged
+    return Lifecycle.TRANSIENT
 
 
 def _make_binding(
@@ -108,7 +129,7 @@ class Container:
         token: type[T],
         factory: Callable[..., Awaitable[T]],
         *,
-        lifecycle: Lifecycle = ...,
+        lifecycle: Lifecycle | None = ...,
         auto_inject: bool = ...,
     ) -> None: ...
 
@@ -118,7 +139,7 @@ class Container:
         token: type[T],
         factory: Callable[..., T],
         *,
-        lifecycle: Lifecycle = ...,
+        lifecycle: Lifecycle | None = ...,
         auto_inject: bool = ...,
     ) -> None: ...
 
@@ -127,7 +148,7 @@ class Container:
         token: type[T],
         factory: Callable[..., T] | Callable[..., Awaitable[T]],
         *,
-        lifecycle: Lifecycle = Lifecycle.TRANSIENT,
+        lifecycle: Lifecycle | None = None,
         auto_inject: bool = False,
     ) -> None:
         """Register ``factory`` for ``token`` under the given lifecycle.
@@ -167,7 +188,7 @@ class Container:
         binding = _make_binding(
             token,
             factory,
-            lifecycle=lifecycle,
+            lifecycle=_resolve_lifecycle(factory, lifecycle),
             auto_inject=auto_inject,
         )
         self._graph.register(binding)
