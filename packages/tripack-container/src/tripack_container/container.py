@@ -24,6 +24,7 @@ import inspect
 import types
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
+from pathlib import Path
 from typing import Any, Self, cast, overload
 
 from tripack_container.providers import INJECT_ATTR, LIFECYCLE_ATTR
@@ -439,3 +440,23 @@ class Container:
     ) -> None:
         """Async counterpart of :meth:`__exit__`: ``await``s :meth:`aclose`."""
         await self.aclose()
+
+    @classmethod
+    def from_toml(cls, path: str | Path) -> "Container":
+        """Build a sealed container from a TOML configuration file.
+
+        Parses ``path`` with the standard-library :mod:`tomllib`,
+        validates the structure against
+        :class:`tripack_contracts.ContainerConfig`, resolves the
+        token and factory qualified names via
+        :func:`importlib.import_module` + :func:`getattr`, and
+        materialises a sealed :class:`Container`.
+
+        Validation happens before any binding is applied, so a
+        structurally invalid file raises
+        :class:`tripack_contracts.ConfigurationError` without
+        producing a partially wired container.
+        """
+        from tripack_container.loaders import load_toml
+
+        return load_toml(path)
