@@ -3,7 +3,7 @@
 
 [project]
 name = "tripack-runtime"
-version = "0.1.0"
+version = "0.2.0"
 description = "Idempotent execution core of the Tripack IoC framework: resolution, dependency graph, per-scope caching, lifecycle and validation."
 readme = "README.md"
 requires-python = ">=3.13"

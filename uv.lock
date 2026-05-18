@@ -626,7 +626,7 @@ doc = [{ name = "zensical" }]
 
 [[package]]
 name = "tripack-container"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/tripack-container" }
 dependencies = [
     { name = "tripack-contracts" },
@@ -648,12 +648,12 @@ provides-extras = ["yaml"]
 
 [[package]]
 name = "tripack-contracts"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/tripack-contracts" }
 
 [[package]]
 name = "tripack-runtime"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/tripack-runtime" }
 dependencies = [
     { name = "tripack-contracts" },

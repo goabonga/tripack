@@ -3,7 +3,7 @@
 
 [project]
 name = "tripack-contracts"
-version = "0.1.0"
+version = "0.2.0"
 description = "Public contracts of the Tripack IoC framework: protocols, interfaces, types, exceptions and annotations."
 readme = "README.md"
 requires-python = ">=3.13"

@@ -2,6 +2,27 @@
 
 All notable changes to this component are documented here.
 
+## [0.2.0] - 2026-05-18
+
+### Added
+
+- **container**: add container skeleton (sync + async resolve) (`4037688`)
+- **container**: add binding API (`0ee4576`)
+- **container**: add container builder (`82a9b6f`)
+- **container**: add module registration (`ee1025b`)
+- **container**: add provider declaration helpers (`0eb1565`)
+- **container**: add automatic constructor injection (`ed9dce0`)
+- **container**: add sync and async scope context managers (`3443415`)
+- **container**: add container teardown (close + aclose) (`b09d753`)
+- **container**: add TOML configuration loader (`7f51e1a`)
+- **container**: add JSON configuration loader (`0cc9089`)
+- **container**: add YAML configuration loader (optional dep) (`c7a30fe`)
+
+### Dependencies
+
+- Track `tripack-contracts` `0.2.0`
+- Track `tripack-runtime` `0.2.0`
+
 ## [0.1.0] - 2026-05-18
 
 ### Added

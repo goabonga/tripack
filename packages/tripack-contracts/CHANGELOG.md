@@ -2,6 +2,18 @@
 
 All notable changes to this component are documented here.
 
+## [0.2.0] - 2026-05-18
+
+### Added
+
+- **contracts**: add core dependency token types (`a4bf4e5`)
+- **contracts**: add lifecycle contract (`9c0fc74`)
+- **contracts**: add provider and async-provider protocols (`08de417`)
+- **contracts**: add resolver and async-resolver protocols (`adc5848`)
+- **contracts**: add closeable and async-closeable protocols (`c3e3cde`)
+- **contracts**: add exception hierarchy (`da5ebff`)
+- **contracts**: add declarative configuration schema (`09573b4`)
+
 ## [0.1.0] - 2026-05-18
 
 ### Added
