@@ -21,12 +21,20 @@ factored at the module level so both ``Container.bind`` and
 """
 
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from typing import Any, cast, overload
 
 from tripack_container.providers import INJECT_ATTR, LIFECYCLE_ATTR
 from tripack_contracts import BindingError, Lifecycle, ResolutionError
-from tripack_runtime import Binding, DependencyGraph, Resolver
+from tripack_runtime import (
+    Binding,
+    DependencyGraph,
+    Resolver,
+    Scope,
+    alifetime_scope,
+    lifetime_scope,
+)
 
 
 def _validate_injectable_signature(
@@ -330,3 +338,46 @@ class Container:
         Drives both sync and async factories.
         """
         return await self._resolver.aresolve(token)
+
+    @contextmanager
+    def scope(self) -> Iterator[Scope]:
+        """Open a sync lifetime :class:`Scope` for ``SCOPED`` bindings.
+
+        Convenience wrapper around
+        :func:`tripack_runtime.lifetime_scope`: inside the
+        ``with`` block, ``SCOPED`` bindings cache on the active
+        :class:`Scope`; on exit the scope auto-closes its sync
+        teardown targets in LIFO order. The same caveats apply -
+        async-only teardown targets are skipped on the sync path,
+        use :meth:`ascope` for them.
+
+        .. code-block:: python
+
+            with container.scope() as scope:
+                handler = container.resolve(RequestHandler)
+                ...
+        """
+        with lifetime_scope() as s:
+            yield s
+
+    @asynccontextmanager
+    async def ascope(self) -> AsyncIterator[Scope]:
+        """Open an async lifetime :class:`Scope` for ``SCOPED`` bindings.
+
+        Convenience wrapper around
+        :func:`tripack_runtime.alifetime_scope`: handles both
+        sync and async teardown targets on exit, awaiting
+        ``aclose`` where present. Each :class:`asyncio.Task`
+        opened inside the surrounding context inherits its own
+        copy of the underlying ContextVar, so concurrent
+        :func:`asyncio.gather` calls each open and close
+        independent scopes.
+
+        .. code-block:: python
+
+            async with container.ascope() as scope:
+                handler = await container.aresolve(RequestHandler)
+                ...
+        """
+        async with alifetime_scope() as s:
+            yield s
