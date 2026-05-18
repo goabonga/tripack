@@ -45,6 +45,34 @@ from typing import Any, Final
 from tripack_contracts import Lifecycle
 
 LIFECYCLE_ATTR: Final[str] = "__tripack_lifecycle__"
+INJECT_ATTR: Final[str] = "__tripack_inject__"
+
+
+def inject[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """Mark ``fn`` for automatic constructor / parameter injection.
+
+    A factory tagged with ``@inject`` and bound through
+    :meth:`Container.bind` (or via the builder) is wrapped at
+    bind-time so that its annotated parameters are resolved
+    from the container before each invocation. Equivalent to
+    passing ``auto_inject=True`` explicitly to ``bind``.
+
+    The decorator returns the input function unchanged - no
+    wrapping happens here; the call site reads the marker. The
+    function remains usable as a plain callable outside the
+    container.
+
+    ```python
+    @inject
+    def make_app(clock: Clock, cache: Cache) -> App:
+        return App(clock, cache)
+
+
+    builder.bind(App, make_app)  # auto_inject implied by the marker
+    ```
+    """
+    setattr(fn, INJECT_ATTR, True)
+    return fn
 
 
 def _tag[**P, R](fn: Callable[P, R], lifecycle: Lifecycle) -> Callable[P, R]:

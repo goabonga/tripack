@@ -24,9 +24,112 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any, cast, overload
 
-from tripack_container.providers import LIFECYCLE_ATTR
-from tripack_contracts import BindingError, Lifecycle
+from tripack_container.providers import INJECT_ATTR, LIFECYCLE_ATTR
+from tripack_contracts import BindingError, Lifecycle, ResolutionError
 from tripack_runtime import Binding, DependencyGraph, Resolver
+
+
+def _validate_injectable_signature(
+    factory: Callable[..., Any] | Callable[..., Awaitable[Any]],
+) -> list[inspect.Parameter]:
+    """Inspect ``factory``'s signature and assert it is injectable.
+
+    Returns the ordered list of parameters that the
+    injection-wrap helper later iterates at resolve time, with
+    each parameter's annotation **resolved** so callers do not
+    need to handle ``from __future__ import annotations``
+    stringified forms. A parameter without an annotation AND
+    without a default value raises
+    :class:`tripack_contracts.BindingError` here - the error
+    surface is bind-time, not resolve-time, so a misconfiguration
+    fails fast.
+
+    For class factories the resolution targets ``cls.__init__``
+    (which is where the constructor parameters live), while
+    function factories are inspected directly.
+    """
+    sig = inspect.signature(factory)
+    target = factory.__init__ if inspect.isclass(factory) else factory
+    hints = inspect.get_annotations(target, eval_str=True)
+    params: list[inspect.Parameter] = []
+    for raw_param in sig.parameters.values():
+        param = (
+            raw_param.replace(annotation=hints[raw_param.name])
+            if raw_param.name in hints
+            else raw_param
+        )
+        if param.annotation is inspect.Parameter.empty:
+            if param.default is inspect.Parameter.empty:
+                raise BindingError(
+                    f"Cannot auto-inject {factory!r}: parameter "
+                    f"{param.name!r} has no annotation and no default."
+                )
+            # Unannotated-with-default: not injectable, let the
+            # factory's own default fill the slot. Skip from the
+            # returned list so the wrap below has nothing to do
+            # for it.
+            continue
+        params.append(param)
+    return params
+
+
+def _resolve_auto_inject(
+    factory: Callable[..., Any] | Callable[..., Awaitable[Any]],
+    explicit: bool,
+) -> bool:
+    """Effective ``auto_inject`` = explicit-keyword OR ``@inject`` marker."""
+    return explicit or bool(getattr(factory, INJECT_ATTR, False))
+
+
+def _wrap_factory_for_injection(
+    factory: Callable[..., Any] | Callable[..., Awaitable[Any]],
+    container: "Container",
+) -> Callable[..., Any] | Callable[..., Awaitable[Any]]:
+    """Return a no-arg factory that resolves annotated params from ``container``.
+
+    Sync factories produce a sync wrapper; async factories
+    produce an async wrapper. Signature validation runs once,
+    at wrap time, so a misconfigured factory fails at bind-time
+    rather than at the first ``resolve`` call. Parameters
+    without an annotation are kept on their default (the
+    validator has already asserted that any annotation-less
+    param carries a default); parameters whose annotation is
+    not registered in the container also fall back to the
+    default when one exists, otherwise re-raise
+    :class:`tripack_contracts.ResolutionError`.
+    """
+    params = _validate_injectable_signature(factory)
+
+    if inspect.iscoroutinefunction(factory):
+        async_fn = cast("Callable[..., Awaitable[Any]]", factory)
+
+        async def wrapped_async() -> Any:
+            kwargs: dict[str, Any] = {}
+            for param in params:
+                try:
+                    kwargs[param.name] = await container.aresolve(param.annotation)
+                except ResolutionError:
+                    if param.default is not inspect.Parameter.empty:
+                        continue
+                    raise
+            return await async_fn(**kwargs)
+
+        return wrapped_async
+
+    sync_fn = cast("Callable[..., Any]", factory)
+
+    def wrapped_sync() -> Any:
+        kwargs: dict[str, Any] = {}
+        for param in params:
+            try:
+                kwargs[param.name] = container.resolve(param.annotation)
+            except ResolutionError:
+                if param.default is not inspect.Parameter.empty:
+                    continue
+                raise
+        return sync_fn(**kwargs)
+
+    return wrapped_sync
 
 
 def _resolve_lifecycle(
@@ -185,13 +288,30 @@ class Container:
                 "after ContainerBuilder.build(). Re-build from a new "
                 "builder to extend the wiring."
             )
+        effective_auto_inject = _resolve_auto_inject(factory, auto_inject)
+        effective_factory: Callable[..., Any] | Callable[..., Awaitable[Any]] = factory
+        if effective_auto_inject:
+            effective_factory = _wrap_factory_for_injection(factory, self)
         binding = _make_binding(
             token,
-            factory,
+            effective_factory,
             lifecycle=_resolve_lifecycle(factory, lifecycle),
-            auto_inject=auto_inject,
+            auto_inject=effective_auto_inject,
         )
         self._graph.register(binding)
+
+    def bind_class[T](
+        self, cls: type[T], *, lifecycle: Lifecycle | None = None
+    ) -> None:
+        """Register ``cls`` as its own factory with automatic injection.
+
+        Equivalent to ``self.bind(cls, cls, lifecycle=lifecycle,
+        auto_inject=True)``: the container resolves the ``__init__``
+        parameters from its own bindings each time ``cls`` is
+        resolved. Parameters with defaults that are not bound in
+        the container keep their default value.
+        """
+        self.bind(cls, cls, lifecycle=lifecycle, auto_inject=True)
 
     def resolve[T](self, token: type[T]) -> T:
         """Return an instance for ``token`` via the underlying resolver.

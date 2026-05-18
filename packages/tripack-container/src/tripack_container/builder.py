@@ -30,9 +30,15 @@ clock = container.resolve(Clock)
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Self, overload
+from typing import Any, Self, cast, overload
 
-from tripack_container.container import Container, _make_binding, _resolve_lifecycle
+from tripack_container.container import (
+    Container,
+    _make_binding,
+    _resolve_auto_inject,
+    _resolve_lifecycle,
+    _validate_injectable_signature,
+)
 from tripack_container.module import Module
 from tripack_contracts import Lifecycle
 from tripack_runtime import DependencyGraph
@@ -94,14 +100,33 @@ class ContainerBuilder:
 
             builder.bind(Clock, make_clock).bind(Cache, make_cache)
         """
+        effective_auto_inject = _resolve_auto_inject(factory, auto_inject)
+        if effective_auto_inject:
+            # Validate eagerly so a misconfigured factory fails at
+            # builder.bind time, not at build() replay. The wrap
+            # itself still happens at build time, where the new
+            # Container is available to close over.
+            _validate_injectable_signature(factory)
         binding = _make_binding(
             token,
             factory,
             lifecycle=_resolve_lifecycle(factory, lifecycle),
-            auto_inject=auto_inject,
+            auto_inject=effective_auto_inject,
         )
         self._graph.register(binding)
         return self
+
+    def bind_class[T](
+        self, cls: type[T], *, lifecycle: Lifecycle | None = None
+    ) -> Self:
+        """Register ``cls`` as its own factory with automatic injection.
+
+        Convenience wrapper around ``self.bind(cls, cls,
+        lifecycle=lifecycle, auto_inject=True)``. The actual
+        wrapping happens at :meth:`build` time, when the new
+        :class:`Container` is available to close over.
+        """
+        return self.bind(cls, cls, lifecycle=lifecycle, auto_inject=True)
 
     def install(self, module: Module) -> Self:
         """Apply ``module`` to this builder and return ``self`` for chaining.
@@ -130,17 +155,45 @@ class ContainerBuilder:
     def build(self) -> Container:
         """Materialise the accumulated bindings into a sealed container.
 
-        Each call snapshots the current bindings into a fresh
-        :class:`DependencyGraph`, hands it to a new
-        :class:`Container`, and seals the latter. Two successive
-        ``build`` calls therefore return two independent
-        containers that are equivalent in registered bindings
-        but isolated in their resolver state (singletons cached
-        in one are not visible from the other).
+        Replays each accumulated bind through the new container
+        so that ``auto_inject`` factories get wrapped with a
+        closure over THIS container instance (not the builder's
+        intermediate state). Two successive ``build`` calls
+        therefore return two independent containers that are
+        equivalent in registered bindings but isolated in their
+        resolver state (singletons cached in one are not visible
+        from the other, and each container's auto-inject
+        wrappers point at itself).
         """
-        snapshot = DependencyGraph()
+        container = Container()
         for binding in self._graph.bindings():
-            snapshot.register(binding)
-        container = Container(graph=snapshot)
+            # Binding.__post_init__ guarantees exactly one of
+            # ``factory`` / ``async_factory`` is set; pick the one
+            # that exists. The cast on ``binding.token`` widens the
+            # graph's ``DependencyToken`` back to the ``type[Any]``
+            # shape Container.bind requires - runtime semantics
+            # are unaffected; the cast is purely for mypy.
+            token = cast("type[Any]", binding.token)
+            if binding.factory is not None:
+                container.bind(
+                    token,
+                    binding.factory,
+                    lifecycle=binding.lifecycle,
+                    auto_inject=binding.auto_inject,
+                )
+            else:
+                # Binding.__post_init__ guarantees exactly one of
+                # ``factory`` / ``async_factory`` is set; the
+                # ``if`` branch above handled ``factory``, so
+                # ``async_factory`` must be set here. A ``cast``
+                # narrows the type for mypy without the runtime
+                # ``assert`` bandit flags as B101 (asserts are
+                # stripped under ``python -O``).
+                container.bind(
+                    token,
+                    cast("Callable[..., Awaitable[Any]]", binding.async_factory),
+                    lifecycle=binding.lifecycle,
+                    auto_inject=binding.auto_inject,
+                )
         container._seal()
         return container
