@@ -269,7 +269,9 @@ jobs:
             pytest "packages/${{ matrix.component }}/tests" \
               --cov="${{ steps.mod.outputs.name }}" \
               --cov-report=term-missing \
-              --cov-report=xml:coverage.xml
+              --cov-report=xml:coverage.xml \
+              --junitxml=junit.xml \
+              -o junit_family=legacy
       - name: Upload coverage artefact
         uses: actions/upload-artifact@v7
         with:
@@ -289,6 +291,15 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           disable_search: true
+      - name: Upload test results to Codecov
+        # Codecov Test Analytics: ingests JUnit XML so failure trends
+        # and flaky tests show up alongside coverage. Runs even when
+        # the test step failed (``!cancelled()`` filter) so red test
+        # runs still report results.
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: Write step summary
         if: always()
         run: |
