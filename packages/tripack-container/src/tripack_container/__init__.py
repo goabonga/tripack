@@ -9,6 +9,7 @@ are internal and may change at any time without prior notice.
 """
 
 from tripack_container.__version__ import __version__
+from tripack_container.builder import ContainerBuilder
 from tripack_container.container import Container
 
-__all__ = ["Container", "__version__"]
+__all__ = ["Container", "ContainerBuilder", "__version__"]
