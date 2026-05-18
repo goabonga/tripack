@@ -51,7 +51,28 @@ doc = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = ["-ra", "--strict-config", "--strict-markers", "--import-mode=importlib"]
-testpaths = ["packages"]
+# `packages/` holds the per-package unit tests; `tests/` holds the
+# workspace-wide cross-package integration suite. The CI matrix
+# runs each package in isolation via explicit path args, while the
+# local `pytest --cov=packages` from the workspace root picks up
+# both folders through these testpaths.
+testpaths = ["packages", "tests"]
+# Make the integration suite's shared fixtures importable by their
+# bare module name (``import _fixtures``) without a per-directory
+# ``conftest.py`` - that would clash with the existing container
+# tests' conftest on mypy's duplicate-module check.
+pythonpath = ["tests/integration"]
+
+[tool.coverage.run]
+# Restrict coverage measurement to the production source tree. Any
+# ``pytest --cov`` invocation from the workspace root (whether it
+# passes an explicit ``--cov=<module>`` flag or not) ends up tracking
+# ``packages/`` only - the workspace-wide integration suite under
+# ``tests/integration/`` exercises the same code paths and would
+# otherwise show up in the report with partial coverage (not every
+# fixture is exercised by every test), which would fail the
+# ``fail_under = 100`` gate below for the wrong reason.
+source = ["packages"]
 
 [tool.coverage.report]
 # Drives `pytest --cov` and the CI matrix gate: every package must hit
@@ -105,6 +126,12 @@ extra_checks = true
 # `explicit_package_bases` lets mypy disambiguate the three identical
 # `tests/test_version.py` modules under each package's `tests/` dir.
 explicit_package_bases = true
+# The integration suite imports its shared fixtures via a bare
+# module name (``import _fixtures``); the runtime resolution
+# happens through a ``conftest.py`` that adds the directory to
+# ``sys.path``. ``mypy_path`` is mypy's static analogue so the
+# import resolves at type-check time too.
+mypy_path = ["tests/integration"]
 # Only non-source artefact directories are excluded - tests are
 # type-checked alongside src for the same strictness.
 exclude = ["build/", "dist/", "site/", ".venv/"]
