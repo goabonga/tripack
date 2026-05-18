@@ -9,45 +9,95 @@ Consumers program against it; the runtime layer
 stays an implementation detail visible only when extending the
 framework.
 
-This commit (4.2) adds the binding API: a typed
-:meth:`Container.bind` method with separate overloads for sync
-and async factories. The implementation auto-detects which
-shape it received via :func:`inspect.iscoroutinefunction` and
-hands the right :class:`tripack_runtime.Binding` slot to the
-graph. The ``auto_inject`` keyword is accepted now (stored on
-the binding) but the actual constructor-injection wrapping
-lands in 4.6.
+This commit (4.3) adds the sealing semantics: a Container
+created by :class:`ContainerBuilder.build` cannot accept any
+further :meth:`bind` call. The default constructor still
+creates an unfrozen Container (used by tests and by ad-hoc
+imperative wiring); the freezer is reached only through the
+builder. The shared binding helper :func:`_make_binding` is
+factored at the module level so both ``Container.bind`` and
+``ContainerBuilder.bind`` produce a uniform
+:class:`tripack_runtime.Binding`.
 """
 
 import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any, cast, overload
 
-from tripack_contracts import Lifecycle
+from tripack_contracts import BindingError, Lifecycle
 from tripack_runtime import Binding, DependencyGraph, Resolver
+
+
+def _make_binding(
+    token: type[Any],
+    factory: Callable[..., Any] | Callable[..., Awaitable[Any]],
+    *,
+    lifecycle: Lifecycle,
+    auto_inject: bool,
+) -> Binding:
+    """Construct the right :class:`Binding` for a sync-or-async factory.
+
+    Auto-detects async via :func:`inspect.iscoroutinefunction`
+    and fills either the ``factory`` or ``async_factory`` slot
+    on the resulting binding. Used by both
+    :meth:`Container.bind` and :meth:`ContainerBuilder.bind`,
+    so the two surfaces register structurally identical
+    bindings.
+    """
+    if inspect.iscoroutinefunction(factory):
+        return Binding(
+            token=token,
+            async_factory=cast("Callable[..., Awaitable[Any]]", factory),
+            lifecycle=lifecycle,
+            auto_inject=auto_inject,
+        )
+    return Binding(
+        token=token,
+        factory=cast("Callable[..., Any]", factory),
+        lifecycle=lifecycle,
+        auto_inject=auto_inject,
+    )
 
 
 class Container:
     """High-level IoC container backed by a :class:`Resolver`.
 
     Wraps a private :class:`DependencyGraph` and the matching
-    :class:`Resolver`; the graph is empty at construction time
-    and is populated through :meth:`bind`.
+    :class:`Resolver`. A Container can be created in two ways:
+
+    - directly via ``Container()`` - empty and **unfrozen**, so
+      :meth:`bind` is allowed; useful for ad-hoc wiring;
+    - via :meth:`ContainerBuilder.build` - populated with
+      pre-registered bindings and **frozen**, so :meth:`bind`
+      raises :class:`tripack_contracts.BindingError`.
+
+    The frozen flag is internal: only the builder reaches it
+    (through :meth:`_seal`); consumer code does not control it
+    directly.
     """
 
-    __slots__ = ("_graph", "_resolver")
+    __slots__ = ("_frozen", "_graph", "_resolver")
 
-    def __init__(self) -> None:
-        """Create an empty container.
+    def __init__(self, *, graph: DependencyGraph | None = None) -> None:
+        """Create a container, optionally over an existing graph.
 
-        Builds an empty :class:`DependencyGraph` and the
-        matching :class:`Resolver`. No bindings are registered
-        yet, so any ``resolve`` call raises
-        :class:`tripack_contracts.ResolutionError` until
-        :meth:`bind` is called.
+        ``graph`` is keyword-only and intended for
+        :meth:`ContainerBuilder.build` to hand over a populated,
+        soon-to-be-sealed graph. Direct callers normally omit it
+        and let the constructor build an empty
+        :class:`DependencyGraph`.
         """
-        self._graph = DependencyGraph()
+        self._graph = graph if graph is not None else DependencyGraph()
         self._resolver = Resolver(self._graph)
+        self._frozen = False
+
+    def _seal(self) -> None:
+        """Mark this container as sealed; no further :meth:`bind` allowed.
+
+        Internal API, called by :meth:`ContainerBuilder.build`.
+        Idempotent: a second call is a no-op.
+        """
+        self._frozen = True
 
     # Async overload first: ``Callable[..., T]`` would otherwise mask
     # ``Callable[..., Awaitable[T]]`` since the broader return type
@@ -102,21 +152,24 @@ class Container:
         The ``auto_inject`` flag is stored on the binding now;
         the actual constructor-injection wrapping is added in
         4.6.
+
+        Raises:
+            BindingError: when the container has been sealed by
+                :meth:`ContainerBuilder.build` (no further binds
+                allowed once a container has been built).
         """
-        if inspect.iscoroutinefunction(factory):
-            binding = Binding(
-                token=token,
-                async_factory=cast("Callable[..., Awaitable[Any]]", factory),
-                lifecycle=lifecycle,
-                auto_inject=auto_inject,
+        if self._frozen:
+            raise BindingError(
+                "Container is sealed; bindings can no longer be added "
+                "after ContainerBuilder.build(). Re-build from a new "
+                "builder to extend the wiring."
             )
-        else:
-            binding = Binding(
-                token=token,
-                factory=cast("Callable[..., Any]", factory),
-                lifecycle=lifecycle,
-                auto_inject=auto_inject,
-            )
+        binding = _make_binding(
+            token,
+            factory,
+            lifecycle=lifecycle,
+            auto_inject=auto_inject,
+        )
         self._graph.register(binding)
 
     def resolve[T](self, token: type[T]) -> T:
