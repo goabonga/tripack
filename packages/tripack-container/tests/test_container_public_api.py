@@ -45,8 +45,12 @@ _EXPECTED_PUBLIC_API: frozenset[str] = frozenset(
         "async_scoped",
         "async_singleton",
         "async_transient",
-        # auto-injection marker
+        # auto-injection marker (factory-level decorator)
         "inject",
+        # call-site injection marker for Annotated[T, Inject]
+        "Inject",
+        # injection-plumbing error (no container reachable)
+        "InjectionError",
         # version
         "__version__",
     }

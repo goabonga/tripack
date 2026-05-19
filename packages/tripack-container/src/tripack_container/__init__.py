@@ -9,6 +9,7 @@ are internal and may change at any time without prior notice.
 """
 
 from tripack_container.__version__ import __version__
+from tripack_container._inject import Inject, InjectionError
 from tripack_container.builder import ContainerBuilder
 from tripack_container.container import Container
 from tripack_container.module import Module
@@ -25,6 +26,8 @@ from tripack_container.providers import (
 __all__ = [
     "Container",
     "ContainerBuilder",
+    "Inject",
+    "InjectionError",
     "Module",
     "__version__",
     "async_scoped",
