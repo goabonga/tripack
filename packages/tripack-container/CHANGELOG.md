@@ -2,6 +2,15 @@
 
 All notable changes to this component are documented here.
 
+## [0.3.0] - 2026-05-19
+
+### Added
+
+- **container**: add Inject marker for Annotated[T, Inject] DI (`980415a`)
+- **container**: add ASGI primitives for lifecycle and per-request scope (`b00a44d`)
+- **container**: add TripackAPI FastAPI adapter (`3f93616`)
+- **container**: inject support for lifespan and middleware (`8809fa6`)
+
 ## [0.2.0] - 2026-05-18
 
 ### Added
