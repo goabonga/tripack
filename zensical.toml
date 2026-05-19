@@ -66,6 +66,8 @@ nav = [
         { "Lifecycles" = "examples/lifecycles.md" },
         { "Modules" = "examples/modules.md" },
         { "Idempotent registration" = "examples/idempotent-registration.md" },
+        { "ASGI integration" = "examples/asgi.md" },
+        { "FastAPI integration" = "examples/fastapi.md" },
     ] },
     { "Stability & deprecation" = "stability.md" },
 ]
