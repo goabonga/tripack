@@ -58,6 +58,8 @@ nav = [
         { "Configuration / TOML" = "container/config-toml.md" },
         { "Configuration / JSON" = "container/config-json.md" },
         { "Configuration / YAML" = "container/config-yaml.md" },
+        { "ASGI primitives" = "container/asgi.md" },
+        { "FastAPI adapter" = "container/fastapi.md" },
     ] },
     { "Examples" = [
         { "Basic container" = "examples/basic-container.md" },
