@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 yaml = ["pyyaml>=6.0"]
+fastapi = ["fastapi>=0.115"]
 
 [project.urls]
 Homepage = "https://github.com/goabonga/tripack"

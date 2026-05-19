@@ -33,6 +33,8 @@ tripack-container = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "fastapi>=0.115",
+    "httpx>=0.27",
     "mypy>=1.18",
     "pre-commit>=4.0",
     "pytest>=8.3",
