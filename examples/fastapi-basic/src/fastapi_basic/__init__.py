@@ -3,22 +3,26 @@
 
 """Tripack + FastAPI integration example.
 
-A minimal web service that demonstrates the canonical FastAPI
-+ Tripack wiring shape:
+Demonstrates the recommended FastAPI + Tripack wiring shape:
 
-- ``lifespan`` builds the :class:`Container` once at startup
-  and tears it down on shutdown;
-- a per-request middleware opens a ``Scope`` so SCOPED
-  bindings (here, ``RequestId``) cache per request;
-- a generic ``from_container(token)`` factory adapts the
-  container to FastAPI's ``Depends`` so route handlers
-  receive their dependencies through the normal ``Depends``
-  machinery.
+- :class:`TripackAPI` (from ``tripack_container.fastapi``)
+  owns the container lifecycle and rewrites
+  ``Annotated[T, Inject]`` parameters to FastAPI ``Depends``;
+- the container is built declaratively from
+  :file:`container.json` via :func:`load_json` - no Python
+  wiring code;
+- handlers reference interfaces only
+  (:mod:`fastapi_basic.contracts`), never the concrete
+  implementations in :mod:`fastapi_basic.services`.
 
 Routes:
 
-- ``GET  /now``        - returns a SINGLETON :class:`Clock` reading.
-- ``GET  /request-id`` - returns the SCOPED request id.
-- ``POST /events``     - appends an entry to the SINGLETON event log.
-- ``GET  /events``     - returns the full event log.
+- ``GET  /now``            - SINGLETON :class:`Clock` injection.
+- ``GET  /request-id``     - SCOPED :class:`RequestId` per request.
+- ``POST /events``         - mixed SINGLETON + SCOPED + SINGLETON injection.
+- ``GET  /events``         - SINGLETON :class:`EventLog` shared across requests.
+- ``POST /audit/{action}`` - chained-interface injection through
+  :class:`AuditTrail` with ``auto_inject``.
+- ``GET  /notify/{msg}``   - optional ``T | None`` injection of
+  :class:`Notifier`, which has no binding by default.
 """

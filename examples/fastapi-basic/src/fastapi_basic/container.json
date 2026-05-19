@@ -1,0 +1,25 @@
+{
+  "bindings": [
+    {
+      "token": "fastapi_basic.contracts.Clock",
+      "factory": "fastapi_basic.services.SystemClock",
+      "lifecycle": "singleton"
+    },
+    {
+      "token": "fastapi_basic.contracts.RequestId",
+      "factory": "fastapi_basic.services.Uuid4RequestId",
+      "lifecycle": "scoped"
+    },
+    {
+      "token": "fastapi_basic.contracts.EventLog",
+      "factory": "fastapi_basic.services.InMemoryEventLog",
+      "lifecycle": "singleton"
+    },
+    {
+      "token": "fastapi_basic.contracts.AuditTrail",
+      "factory": "fastapi_basic.services.DefaultAuditTrail",
+      "lifecycle": "singleton",
+      "auto_inject": true
+    }
+  ]
+}

@@ -7,6 +7,9 @@ version = "0.0.0"
 description = "Tripack + FastAPI integration example: lifespan-bootstrapped container + Depends adapter."
 requires-python = ">=3.13"
 dependencies = [
+    # The ``[fastapi]`` extra on tripack-container exists in
+    # the workspace source but was not published in v0.2.0; we
+    # declare ``fastapi`` directly until the next release.
     "tripack-container>=0.2.0",
     "fastapi>=0.115",
     "uvicorn>=0.32",
@@ -22,6 +25,17 @@ dev = [
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
+[tool.uv.sources]
+# ``Inject`` and ``TripackAPI`` exist in the workspace source
+# but were not published in tripack-container v0.2.0. Until the
+# next release ships them, the example resolves the three
+# packages against the local workspace so the demo runs
+# unmodified during development. Drop this block once
+# ``Inject`` is on PyPI.
+tripack-contracts = { path = "../../packages/tripack-contracts", editable = true }
+tripack-runtime = { path = "../../packages/tripack-runtime", editable = true }
+tripack-container = { path = "../../packages/tripack-container", editable = true }
+
 [tool.hatch.build.targets.wheel]
 # Editable install of the example's source tree so
 # ``python -m fastapi_basic`` finds the package after
@@ -30,6 +44,10 @@ build-backend = "hatchling.build"
 # simplest way to get the src layout on ``sys.path`` for both
 # pytest and the ``__main__`` entrypoint.
 packages = ["src/fastapi_basic"]
+# ``container.json`` ships alongside the Python module so the
+# ``Path(__file__).parent / 'container.json'`` lookup in
+# ``api.py`` resolves both in dev and after install.
+include = ["src/fastapi_basic/container.json"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
