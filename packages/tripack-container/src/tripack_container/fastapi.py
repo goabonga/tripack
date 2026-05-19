@@ -75,10 +75,15 @@ from typing import TYPE_CHECKING, Annotated, Any, cast, get_args
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute, APIRouter
 
-from tripack_container._inject import parse_inject
+from tripack_container._inject import (
+    parse_inject,
+    parse_inject_params,
+    resolve_inject_kwargs,
+)
 from tripack_container.asgi import (
     ContainerFactory,
     ContainerScopeMiddleware,
+    TripackMiddleware,
     container_lifespan,
 )
 from tripack_contracts import ResolutionError
@@ -126,7 +131,44 @@ class TripackAPI(FastAPI):
         kwargs["lifespan"] = _compose_lifespan(container_factory, user_lifespan)
         super().__init__(*args, **kwargs)
         self.router.route_class = _TripackRoute
+        # ContainerScopeMiddleware sits at the outermost user
+        # position so SCOPED bindings cache per request. Any
+        # ``TripackMiddleware`` subclass added later is inserted
+        # **inner** to it by :meth:`add_middleware` so its
+        # ``dispatch`` can resolve SCOPED tokens.
         self.add_middleware(ContainerScopeMiddleware)
+
+    def add_middleware(self, middleware_class: Any, *args: Any, **options: Any) -> None:
+        """Insert ``TripackMiddleware`` subclasses inner to the scope.
+
+        Starlette's :meth:`add_middleware` always prepends to
+        ``self.user_middleware`` (latest-added = outermost). If
+        we kept that default for :class:`TripackMiddleware`
+        subclasses, they would run **outside** the
+        :class:`ContainerScopeMiddleware` and SCOPED resolution
+        on their ``dispatch`` would raise
+        :class:`tripack_contracts.ScopeError`. Overriding here
+        moves :class:`TripackMiddleware` instances **inner** to
+        the scope so per-call SCOPED tokens resolve correctly,
+        while non-Tripack middleware (auth, CORS, logging that
+        doesn't need SCOPED) keep the standard outer placement.
+        """
+        if isinstance(middleware_class, type) and issubclass(
+            middleware_class, TripackMiddleware
+        ):
+            from starlette.middleware import Middleware
+
+            # ``Middleware`` accepts any callable that produces an
+            # ASGI app from ``(app, **options)``. ``TripackMiddleware``
+            # satisfies that contract at runtime but its strict type
+            # signature (``accessor`` keyword-only) does not unify
+            # with the broad ``_MiddlewareFactory`` Starlette declares
+            # statically. Cast keeps mypy quiet without changing runtime.
+            self.user_middleware.append(
+                Middleware(cast("Any", middleware_class), **options)
+            )
+            return
+        super().add_middleware(middleware_class, *args, **options)
 
     def include_router(self, router: APIRouter, *args: Any, **kwargs: Any) -> None:
         """Forward the inject-aware route class to default sub-routers.
@@ -185,10 +227,23 @@ def _compose_lifespan(
 ) -> _LifespanFactory:
     """Layer the user's lifespan inside :func:`container_lifespan`.
 
-    Pure composition: the container is built first (so the user
-    lifespan can read ``app.state.container``), and ``aclose``
+    Beyond pure composition, the wrapper introspects
+    ``user_lifespan``'s signature once: ``Annotated[T, Inject]``
+    keyword params are resolved from the freshly built
+    container at startup and passed to the user function. This
+    is what makes lifespan injection look identical to the
+    handler form on the user side - no ``@tripack_lifespan``
+    decorator needed inside :class:`TripackAPI`.
+
+    The container is built first (so the user lifespan can
+    read ``app.state.container`` directly and the inject
+    resolution can read it from the same place), and ``aclose``
     runs last (so the user teardown still reaches the container).
     """
+
+    inject_params = (
+        parse_inject_params(user_lifespan) if user_lifespan is not None else {}
+    )
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -196,7 +251,9 @@ def _compose_lifespan(
             if user_lifespan is None:
                 yield
             else:
-                async with user_lifespan(app):
+                container = app.state.container
+                kwargs = await resolve_inject_kwargs(inject_params, container)
+                async with user_lifespan(app, **kwargs):
                     yield
 
     return _lifespan

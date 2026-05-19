@@ -8,16 +8,19 @@ ships **without** any FastAPI dependency: a vanilla Starlette
 ``Starlette()`` application can compose
 :func:`container_lifespan` and
 :class:`ContainerScopeMiddleware` to get the same lifecycle +
-per-request scope as a per-framework adapter would, without
-paying any FastAPI coupling.
+per-request scope as :class:`TripackAPI`, without paying the
+FastAPI coupling. The only thing missing in Starlette is the
+``Annotated[T, Inject]`` rewriting - Starlette handlers
+resolve from the container manually inside the handler body.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Any, Protocol, cast
 
+import pytest
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -25,8 +28,13 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from tripack_container import ContainerBuilder
-from tripack_container.asgi import ContainerScopeMiddleware, container_lifespan
+from tripack_container import ContainerBuilder, Inject, InjectionError
+from tripack_container.asgi import (
+    ContainerScopeMiddleware,
+    TripackMiddleware,
+    container_lifespan,
+    tripack_lifespan,
+)
 from tripack_contracts import Lifecycle
 
 if TYPE_CHECKING:
@@ -53,6 +61,20 @@ class RequestCounter:
         self.value = 0
 
 
+class _Notifier(Protocol):
+    """Module-level Protocol so annotation eval can resolve it.
+
+    ``parse_inject_params`` calls ``inspect.get_annotations(fn,
+    eval_str=True)`` which evaluates string annotations in
+    ``fn.__globals__`` - protocols / token types defined inside
+    a test function would not resolve. Real-world usage already
+    follows the module-level convention, so this is not a real
+    limitation, only one the tests have to respect.
+    """
+
+    def notify(self, msg: str) -> None: ...
+
+
 def _build_container() -> Container:
     builder = ContainerBuilder()
     builder.bind(
@@ -67,7 +89,7 @@ def _build_container() -> Container:
 def _build_starlette_app() -> Starlette:
     """Wire a Starlette app on top of the framework-agnostic ASGI primitives.
 
-    The wiring shape is the analogue of a per-framework adapter
+    The wiring shape is the analogue of :class:`TripackAPI`
     for a Starlette user:
 
     - ``lifespan`` consumes :func:`container_lifespan` so the
@@ -105,7 +127,7 @@ def _build_starlette_app() -> Starlette:
 
 
 def test_starlette_app_resolves_singleton_via_asgi_layer() -> None:
-    """The ASGI primitives + a Starlette app expose the container per request.
+    """The ASGI primitives + a Starlette app give the same UX as TripackAPI.
 
     ``container_lifespan`` builds the container and stores it on
     ``app.state``; ``ContainerScopeMiddleware`` opens
@@ -216,6 +238,181 @@ def test_container_scope_middleware_passes_lifespan_through() -> None:
         ]
 
     asyncio.run(drive())
+
+
+def test_tripack_middleware_resolves_dispatch_kwargs_from_container() -> None:
+    """A ``TripackMiddleware`` injects ``Annotated[T, Inject]`` into ``dispatch``."""
+    captured: dict[str, Any] = {}
+
+    class CaptureMiddleware(TripackMiddleware):
+        async def dispatch(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            clock: Annotated[Clock, Inject],
+        ) -> None:
+            captured["clock"] = clock
+            await self.app(scope, receive, send)
+
+    async def now(request: Request) -> JSONResponse:
+        return JSONResponse({"hit": True})
+
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        async with container_lifespan(app, container_factory=_build_container):
+            yield
+
+    app = Starlette(
+        lifespan=lifespan,
+        routes=[Route("/now", now)],
+        middleware=[
+            Middleware(ContainerScopeMiddleware),
+            Middleware(CaptureMiddleware),
+        ],
+    )
+    with TestClient(app) as client:
+        assert client.get("/now").json() == {"hit": True}
+    assert captured["clock"].now() == 42
+
+
+def test_tripack_middleware_passes_through_lifespan_scopes() -> None:
+    """Lifespan scopes never trigger dispatch on a ``TripackMiddleware``."""
+    counter = {"dispatch_calls": 0}
+
+    class TouchyMiddleware(TripackMiddleware):
+        async def dispatch(
+            self, scope: Any, receive: Any, send: Any, **kwargs: Any
+        ) -> None:
+            counter["dispatch_calls"] += 1
+            await self.app(scope, receive, send)
+
+    async def ping(request: Request) -> JSONResponse:
+        return JSONResponse({"ok": True})
+
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        async with container_lifespan(app, container_factory=_build_container):
+            yield
+
+    app = Starlette(
+        lifespan=lifespan,
+        routes=[Route("/ping", ping)],
+        middleware=[
+            Middleware(ContainerScopeMiddleware),
+            Middleware(TouchyMiddleware),
+        ],
+    )
+    with TestClient(app) as client:
+        client.get("/ping")
+        client.get("/ping")
+    # Lifespan startup + shutdown do NOT trigger dispatch;
+    # only the two HTTP requests do.
+    assert counter["dispatch_calls"] == 2
+
+
+def test_tripack_lifespan_injects_keyword_only_params() -> None:
+    """Decorator factory resolves ``Annotated[T, Inject]`` kwargs at startup."""
+    captured: dict[str, Any] = {}
+
+    @tripack_lifespan(container_factory=_build_container)
+    @asynccontextmanager
+    async def lifespan(
+        app: Starlette,
+        *,
+        clock: Annotated[Clock, Inject],
+    ) -> AsyncIterator[None]:
+        captured["startup_clock"] = clock.now()
+        yield
+        captured["shutdown"] = True
+
+    async def hello(request: Request) -> JSONResponse:
+        return JSONResponse({"hi": True})
+
+    app = Starlette(lifespan=lifespan, routes=[Route("/hi", hello)])
+    with TestClient(app) as client:
+        client.get("/hi")
+    assert captured["startup_clock"] == 42
+    assert captured["shutdown"] is True
+
+
+def test_tripack_lifespan_optional_returns_none_when_unbound() -> None:
+    """``Annotated[T | None, Inject]`` resolves to ``None`` on a missing binding."""
+    captured: dict[str, Any] = {}
+
+    @tripack_lifespan(container_factory=_build_container)
+    @asynccontextmanager
+    async def lifespan(
+        app: Starlette,
+        *,
+        notifier: Annotated[_Notifier | None, Inject],
+    ) -> AsyncIterator[None]:
+        captured["notifier"] = notifier
+        yield
+
+    async def hello(request: Request) -> JSONResponse:
+        return JSONResponse({"hi": True})
+
+    app = Starlette(lifespan=lifespan, routes=[Route("/hi", hello)])
+    with TestClient(app) as client:
+        client.get("/hi")
+    assert captured["notifier"] is None
+
+
+def test_tripack_middleware_raises_injection_error_without_container() -> None:
+    """Default accessor failure surfaces as ``InjectionError``.
+
+    Without the right ``scope['app'].state.container`` shape the
+    accessor raises ``KeyError`` / ``AttributeError``;
+    :class:`TripackMiddleware` converts those to a wrapping
+    :class:`InjectionError` with a wiring hint.
+    """
+    import asyncio
+
+    class _M(TripackMiddleware):
+        async def dispatch(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            clock: Annotated[Clock, Inject],
+        ) -> None:
+            await self.app(scope, receive, send)
+
+    async def inner(scope: Any, receive: Any, send: Any) -> None: ...
+
+    mw = _M(inner)
+
+    async def drive() -> None:
+        async def receive() -> Any:
+            raise AssertionError("not called")
+
+        async def send(_: Any) -> None: ...
+
+        with pytest.raises(InjectionError):
+            # ``scope['app'].state.container`` does not exist; the
+            # accessor raises ``AttributeError`` which the middleware
+            # converts to ``InjectionError``.
+            await mw({"type": "http", "app": object()}, receive, send)
+
+    asyncio.run(drive())
+
+
+def test_tripack_middleware_without_dispatch_raises_type_error() -> None:
+    """Subclassing without defining ``dispatch`` is caught at class creation.
+
+    ``__init_subclass__`` raises :class:`TypeError` rather than
+    letting the missing method surface later at first request,
+    so the misuse is visible at import time.
+    """
+    with pytest.raises(TypeError, match="must define a ``dispatch`` method"):
+        # ``class`` statement inside ``pytest.raises`` triggers
+        # ``__init_subclass__`` which raises. Control never
+        # reaches code after the class body in the success case.
+        class _NoDispatch(TripackMiddleware):
+            pass
 
 
 def test_default_accessor_reads_from_app_state() -> None:

@@ -28,6 +28,7 @@ from fastapi import APIRouter, FastAPI
 from starlette.testclient import TestClient
 
 from tripack_container import ContainerBuilder, Inject
+from tripack_container.asgi import TripackMiddleware
 from tripack_container.fastapi import TripackAPI, TripackRouter
 from tripack_contracts import Lifecycle
 
@@ -317,6 +318,118 @@ def test_container_aclose_runs_on_shutdown() -> None:
     # TestClient exits → lifespan shutdown → container.aclose()
     # → TornDown.close().
     assert closed["flag"] is True
+
+
+def test_user_lifespan_with_inject_kwargs_resolved_automatically() -> None:
+    """``TripackAPI`` introspects the user lifespan and injects kwargs.
+
+    Same ``Annotated[T, Inject]`` syntax as handlers - no
+    decorator on the user side; the FastAPI adapter parses the
+    user lifespan signature once and resolves at startup.
+    """
+    captured: dict[str, object] = {}
+
+    @asynccontextmanager
+    async def user_lifespan(
+        app: FastAPI,
+        *,
+        clock: Annotated[Clock, Inject],
+    ) -> AsyncIterator[None]:
+        captured["startup_now"] = clock.now()
+        yield
+        captured["shutdown"] = True
+
+    app = TripackAPI(
+        container_factory=_build_basic_container,
+        lifespan=user_lifespan,
+    )
+
+    @app.get("/ping")
+    def ping() -> dict[str, bool]:
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        client.get("/ping")
+    assert captured == {"startup_now": 1, "shutdown": True}
+
+
+def test_tripack_middleware_auto_inner_to_scope() -> None:
+    """``add_middleware`` puts ``TripackMiddleware`` instances inner to CSM.
+
+    Demonstrated by injecting a SCOPED token into ``dispatch`` -
+    if the middleware ran OUTER to ``ContainerScopeMiddleware``,
+    no scope would be open and the resolution would raise
+    :class:`ScopeError`. Reaching the handler means the
+    ordering is correct.
+    """
+    seen_values: list[int] = []
+
+    class CounterMiddleware(TripackMiddleware):
+        async def dispatch(
+            self,
+            scope: Any,
+            receive: Any,
+            send: Any,
+            *,
+            counter: Annotated[RequestCounter, Inject],
+        ) -> None:
+            counter.value += 100
+            seen_values.append(counter.value)
+            await self.app(scope, receive, send)
+
+    app = TripackAPI(container_factory=_build_basic_container)
+    app.add_middleware(CounterMiddleware)
+
+    @app.get("/incr")
+    def incr(counter: Annotated[RequestCounter, Inject]) -> dict[str, int]:
+        # Middleware already bumped to 100; handler bumps again.
+        counter.value += 1
+        return {"value": counter.value}
+
+    with TestClient(app) as client:
+        response = client.get("/incr")
+    # Middleware saw the SCOPED counter at 100; handler saw 101
+    # (same SCOPED instance per request).
+    assert seen_values == [100]
+    assert response.json() == {"value": 101}
+
+
+def test_non_tripack_middleware_keeps_default_outer_placement() -> None:
+    """A vanilla ASGI middleware added via ``add_middleware`` stays outer to CSM.
+
+    Reads ``scope`` directly to verify execution order: the
+    outer middleware fires before ``ContainerScopeMiddleware``
+    opens the scope, so ``scope`` does NOT yet carry any
+    container-related state from CSM.
+    """
+    events: list[str] = []
+
+    class OuterTracer:
+        def __init__(self, app: Any) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            if scope["type"] != "http":
+                # Skip lifespan / websocket - only HTTP relevant for ordering test.
+                await self.app(scope, receive, send)
+                return
+            events.append("outer-enter")
+            await self.app(scope, receive, send)
+            events.append("outer-exit")
+
+    app = TripackAPI(container_factory=_build_basic_container)
+    app.add_middleware(OuterTracer)
+
+    @app.get("/x")
+    def x(clock: Annotated[Clock, Inject]) -> dict[str, int]:
+        events.append("handler")
+        return {"now": clock.now()}
+
+    with TestClient(app) as client:
+        client.get("/x")
+    # ``outer-enter`` must fire before the handler (which runs
+    # inside the scope). Order proves OuterTracer wraps CSM.
+    assert events == ["outer-enter", "handler", "outer-exit"]
 
 
 def test_user_lifespan_runs_inside_container_lifecycle() -> None:
