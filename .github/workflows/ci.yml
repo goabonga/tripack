@@ -730,14 +730,12 @@ jobs:
           ls -l dist
       - name: Publish ${{ matrix.component }} to PyPI
         # Uses Trusted Publishing (OIDC) keyed to the per-package
-        # environment `pypi-${{ matrix.component }}`. Falls back to
-        # `PYPI_API_TOKEN` if defined as an environment secret.
-        # `skip-existing` is kept to make the workflow resumable when a
-        # re-run already uploaded the same version.
+        # environment `pypi-${{ matrix.component }}`. `skip-existing` is
+        # kept to make the workflow resumable when a re-run already
+        # uploaded the same version.
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
       - name: Create GitHub release for ${{ matrix.component }}
         env:
