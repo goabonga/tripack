@@ -297,9 +297,13 @@ jobs:
         # the test step failed (``!cancelled()`` filter) so red test
         # runs still report results.
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v6
         with:
+          files: junit.xml
+          report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          disable_search: true
       - name: Write step summary
         if: always()
         run: |
