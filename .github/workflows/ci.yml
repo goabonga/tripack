@@ -43,6 +43,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Install multicz
         run: uv tool install multicz
       - name: Validate multicz configuration
@@ -149,6 +150,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Sync workspace
         run: uv sync --frozen --all-packages
       - name: Check SPDX license headers
@@ -185,6 +187,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Sync workspace
         run: uv sync --frozen --all-packages
       - name: Type-check
@@ -215,6 +218,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Sync workspace
         run: uv sync --frozen --all-packages
       - name: Lint
@@ -257,6 +261,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Sync workspace
         run: uv sync --frozen --all-packages
       - name: Resolve Python module name
@@ -348,6 +353,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Sync workspace
         run: uv sync --frozen --all-packages
       - name: Run integration tests
@@ -394,6 +400,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Sync example
         working-directory: examples/${{ matrix.example }}
         run: uv sync --frozen
@@ -424,6 +431,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Run Bandit
         run: |
           uvx bandit --recursive \
@@ -453,6 +461,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Sync workspace
         run: uv sync --frozen --all-packages
       - name: Run pip-audit
@@ -552,6 +561,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Install multicz
         run: uv tool install multicz
       - name: Configure git author
@@ -709,6 +719,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Install multicz
         run: uv tool install multicz
       - name: Build wheel and sdist for ${{ matrix.component }}
@@ -793,6 +804,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: ${{ github.job }}
       - name: Install Zensical (doc group)
         # `--only-group doc` installs the `doc` dependency-group from
         # pyproject.toml without pulling the dev group or the workspace
