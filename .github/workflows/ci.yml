@@ -288,7 +288,7 @@ jobs:
         # on Codecov. The action no-ops cleanly when unauthenticated or
         # when the project is unknown. Per-component coverage is reported
         # under a Codecov flag matching the package name.
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.xml
           flags: ${{ matrix.component }}
@@ -302,7 +302,7 @@ jobs:
         # the test step failed (``!cancelled()`` filter) so red test
         # runs still report results.
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: junit.xml
           report_type: test_results
