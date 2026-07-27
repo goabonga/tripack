@@ -44,7 +44,7 @@ dev = [
     "tripack-contracts",
     "tripack-runtime",
     "tripack-container",
-    "types-pyyaml>=6.0",
+    "types-pyyaml>=6.0.12.20260724",
 ]
 doc = [
     "zensical",
