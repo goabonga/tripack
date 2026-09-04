@@ -1,10 +1,19 @@
-# Tripack
+<h1 align="center">
+  <img src="docs/tripack.svg" alt="Tripack" width="120" /><br/>
+  Tripack
+</h1>
 
-[![CI](https://github.com/goabonga/tripack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/goabonga/tripack/actions/workflows/ci.yml)
-[![Codecov](https://img.shields.io/codecov/c/github/goabonga/tripack?logo=codecov)](https://codecov.io/gh/goabonga/tripack)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/goabonga/tripack/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+<p align="center">
+  <em>Dependency injection and IoC container patterns, in three packages.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/goabonga/tripack/actions/workflows/ci.yml"><img src="https://github.com/goabonga/tripack/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
+  <a href="https://codecov.io/gh/goabonga/tripack"><img src="https://img.shields.io/codecov/c/github/goabonga/tripack?logo=codecov" alt="Codecov"/></a>
+  <a href="https://github.com/goabonga/tripack/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.13%2B-blue.svg" alt="Python"/></a>
+  <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv"/></a>
+</p>
 
 Tripack is a compact Python project exploring dependency injection and IoC
 container patterns across three packages. It demonstrates clean object wiring,
