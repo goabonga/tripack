@@ -725,6 +725,7 @@ jobs:
       && needs.release.result == 'success'
       && needs.release.outputs.no_bumps == 'false'
       && needs.release.outputs.bumped_pypi_json != '[]'
+      && needs.release.outputs.bumped_pypi_json != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -813,11 +814,26 @@ jobs:
   docs:
     name: docs
     needs: [detect, release]
+    # Gated on the release job having RUN and succeeded, nothing finer.
+    #
+    # It used to also require `release.outputs.no_bumps == 'false'`, and
+    # the first release this repository ever ran skipped this job with
+    # every visible input satisfied: release succeeded, its log shows
+    # `no_bumps=false` written and "Set output 'no_bumps'" evaluated,
+    # and the `github-pages` environment allows `main`. The output is
+    # the one term whose server-side value cannot be checked from
+    # outside a run, so it is gone.
+    #
+    # Nothing is lost by dropping it: release only runs when multicz
+    # sees a tracked component move (its own gate), and rebuilding the
+    # site is idempotent. The narrow case the term used to exclude -
+    # release ran, planner bumped nothing - now costs one redundant
+    # redeploy of a site that should mirror main anyway.
     if: >-
-      github.event_name == 'push'
+      !cancelled()
+      && github.event_name == 'push'
       && github.ref == 'refs/heads/main'
       && needs.release.result == 'success'
-      && needs.release.outputs.no_bumps == 'false'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -827,6 +843,21 @@ jobs:
       pages: write
       id-token: write
     steps:
+      - name: Record the release outputs this job was gated on
+        # Cheap forensics: the previous skip left no trace of what the
+        # downstream gate actually read. Printing them here means the
+        # next surprise has evidence attached to it.
+        run: |
+          {
+            echo "## Docs deploy - release outputs as seen downstream"
+            echo ""
+            echo "| Output | Value |"
+            echo "| --- | --- |"
+            echo "| \`no_bumps\` | \`${{ needs.release.outputs.no_bumps }}\` |"
+            echo "| \`bumped\` | \`${{ needs.release.outputs.bumped }}\` |"
+            echo "| \`bumped_json\` | \`${{ needs.release.outputs.bumped_json }}\` |"
+            echo "| \`docs_changed\` | \`${{ needs.detect.outputs.docs_changed }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@v7
         with:
           # Pull the release commit + tags multicz just pushed so the
