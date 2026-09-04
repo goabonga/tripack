@@ -4,7 +4,7 @@
 [project]
 name = "tripack"
 version = "0.0.0"
-description = "Tripack is a compact Python project exploring dependency injection and IoC container patterns across three packages. It demonstrates clean object wiring, decoupled services, reusable components, and maintainable application structure."
+description = "Typed IoC container for Python: sync and async resolution, transient/singleton/scoped lifecycles, modules, declarative TOML/JSON/YAML wiring and a FastAPI adapter."
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"

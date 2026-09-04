@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  <em>Dependency injection and IoC container patterns, in three packages.</em>
+  <em>A typed IoC container for Python - sync, async, and FastAPI-ready.</em>
 </p>
 
 <p align="center">
@@ -15,10 +15,16 @@
   <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv"/></a>
 </p>
 
-Tripack is a compact Python project exploring dependency injection and IoC
-container patterns across three packages. It demonstrates clean object wiring,
-decoupled services, reusable components, and maintainable application
-structure.
+Tripack is a dependency-injection container for Python 3.13+, published as
+three independently versioned packages: the contracts you type against, the
+resolution runtime, and the container API you call.
+
+It resolves sync and async factories through a single graph, with transient,
+singleton and scoped lifecycles and deterministic teardown; composes
+registrations into modules; detects dependency cycles at resolution time; and
+wires an application declaratively from TOML, JSON or YAML. ASGI primitives
+and a FastAPI adapter (`TripackAPI` with `Annotated[T, Inject]`) ship with
+the container.
 
 ## Documentation
 

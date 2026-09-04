@@ -3,7 +3,7 @@
 
 [project]
 site_name = "Tripack"
-site_description = "Tripack is a compact Python project exploring dependency injection and IoC container patterns across three packages."
+site_description = "Typed IoC container for Python: sync and async resolution, transient/singleton/scoped lifecycles, modules, declarative TOML/JSON/YAML wiring and a FastAPI adapter."
 site_author = "Chris"
 site_url = "https://goabonga.github.io/tripack/"
 repo_url = "https://github.com/goabonga/tripack"
