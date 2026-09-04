@@ -90,7 +90,7 @@ generator = false
 # the component's only version file - there is no VERSION file in this
 # workspace and the site does not render the number anywhere.
 [project.extra.versions]
-docs = "0.0.0"
+docs = "0.1.0"
 
 # Branding. Both files are generated from `assets/tripack.svg` by
 # `scripts/regen-icons.sh` and committed: the docs job builds the site

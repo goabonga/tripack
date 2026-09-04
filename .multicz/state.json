@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "git_head": "e2e610bf1c962384b821ff1fa8b7125a70789456",
-  "git_head_short": "e2e610b",
-  "timestamp": "2026-05-19T12:26:08Z",
+  "git_head": "2035ae526e555ca240235731061be75d03736a62",
+  "git_head_short": "2035ae5",
+  "timestamp": "2026-09-04T10:55:04Z",
   "components": {
-    "tripack-container": {
-      "version": "0.3.0",
-      "tag": "tripack-container-v0.3.0",
+    "docs": {
+      "version": "0.1.0",
+      "tag": "docs-v0.1.0",
       "tag_sha": null
     }
   }
