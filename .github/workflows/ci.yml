@@ -22,9 +22,10 @@ jobs:
   # On PR: vs the target branch. On main: vs each component's last tag
   # (multicz default), which scopes the matrix to bump-worthy work.
   #
-  # Docs detection bypasses multicz on purpose: the Zensical site has no
-  # version of its own, so it has no tag for `multicz changed` to compare
-  # against. We use a plain `git diff` on the docs paths instead.
+  # The Zensical site is a multicz component too (`[components.docs]`),
+  # so docs detection is tag-aware like the packages. It is reported
+  # separately from `packages` because it owns no `packages/<name>/`
+  # tree for the per-component quality matrices to walk.
   detect:
     name: detect changed packages
     runs-on: ubuntu-latest
@@ -60,41 +61,48 @@ jobs:
             REF="each component's last tag"
             ALL=$(uv tool run multicz changed --output json | jq -c '.changed')
           fi
-          PACKAGES=$(echo "$ALL" | jq -c '.')
+          # The `docs` component tracks the Zensical site, not a Python
+          # package: there is no `packages/docs/` tree for the lint /
+          # type-check / test / bandit matrices to walk, so it is split
+          # out of `packages` here and gates the `docs` job on its own.
+          PACKAGES=$(echo "$ALL" | jq -c 'map(select(. != "docs"))')
           echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
           if [ "$PACKAGES" = "[]" ] || [ -z "$PACKAGES" ]; then
             echo "has_package_changes=false" >> "$GITHUB_OUTPUT"
           else
             echo "has_package_changes=true" >> "$GITHUB_OUTPUT"
           fi
-          # 2. Docs detection via git diff (no tag exists for docs).
+          # 2. Base ref for the plain git-diff checks further down. The
+          #    integration suite and the examples live OUTSIDE multicz's
+          #    per-component tracking (no version, no tag), so they are
+          #    diffed directly rather than asked of multicz.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            DOCS_BASE="origin/${{ github.base_ref }}"
+            DIFF_BASE="origin/${{ github.base_ref }}"
           elif git rev-parse HEAD^ > /dev/null 2>&1; then
-            DOCS_BASE="HEAD^"
+            DIFF_BASE="HEAD^"
           else
             # Very first commit on main - diff against the empty tree so
-            # the initial deploy still gates correctly.
-            DOCS_BASE="$(git hash-object -t tree /dev/null)"
+            # the initial run still gates correctly.
+            DIFF_BASE="$(git hash-object -t tree /dev/null)"
           fi
-          if git diff --quiet "$DOCS_BASE" HEAD -- docs zensical.toml; then
-            DOCS=false
-          else
-            DOCS=true
-          fi
+          # 3. Docs detection via multicz. The site IS a tracked
+          #    component now (`[components.docs]`, paths `docs/**` +
+          #    `zensical.toml`), so it is tag-aware exactly like the
+          #    packages and a plain git diff is no longer needed.
+          #    Reading it from the same source the release job plans
+          #    from is what keeps "docs changed" and "docs bumped" in
+          #    agreement - the `docs` deploy job gates on the second.
+          DOCS=$(echo "$ALL" | jq -r 'any(.[]; . == "docs")')
           echo "docs_changed=$DOCS" >> "$GITHUB_OUTPUT"
-          # 3. Integration suite detection. Same git-diff approach as
-          #    docs: the integration tests live OUTSIDE multicz's
-          #    per-component tracking (no version, no tag), so we
-          #    diff `tests/integration/` directly against the same
-          #    base ref the docs check uses.
-          if git diff --quiet "$DOCS_BASE" HEAD -- tests/integration; then
+          # 4. Integration suite detection - git diff against the base
+          #    ref computed above.
+          if git diff --quiet "$DIFF_BASE" HEAD -- tests/integration; then
             INTEGRATION=false
           else
             INTEGRATION=true
           fi
           echo "integration_changed=$INTEGRATION" >> "$GITHUB_OUTPUT"
-          # 4. Examples detection. The list is discovered dynamically
+          # 5. Examples detection. The list is discovered dynamically
           #    (each ``examples/<name>`` becomes a matrix entry) so a
           #    new example automatically enrols in the gate, and a
           #    git-diff against ``examples/`` answers "did the example
@@ -113,7 +121,7 @@ jobs:
           else
             echo "has_examples=true" >> "$GITHUB_OUTPUT"
           fi
-          if git diff --quiet "$DOCS_BASE" HEAD -- examples; then
+          if git diff --quiet "$DIFF_BASE" HEAD -- examples; then
             EXAMPLES_CHANGED=false
           else
             EXAMPLES_CHANGED=true
@@ -125,10 +133,10 @@ jobs:
             echo "| Field | Value |"
             echo "| --- | --- |"
             echo "| Packages | \`$PACKAGES\` |"
-            echo "| Docs changed | \`$DOCS\` (vs \`$DOCS_BASE\`) |"
-            echo "| Integration changed | \`$INTEGRATION\` (vs \`$DOCS_BASE\`) |"
+            echo "| Docs changed | \`$DOCS\` (vs \`$DIFF_BASE\`) |"
+            echo "| Integration changed | \`$INTEGRATION\` (vs \`$DIFF_BASE\`) |"
             echo "| Examples | \`$EXAMPLES\` |"
-            echo "| Examples changed | \`$EXAMPLES_CHANGED\` (vs \`$DOCS_BASE\`) |"
+            echo "| Examples changed | \`$EXAMPLES_CHANGED\` (vs \`$DIFF_BASE\`) |"
             echo "| Package reference | \`$REF\` |"
             echo "| Event | \`${{ github.event_name }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -537,14 +545,23 @@ jobs:
       - bandit
       - pip-audit
       - osv-scanner
-    # `has_package_changes` already implies every upstream check ran
-    # (license-headers / type-check / lint / test / integration / bandit /
-    # pip-audit / osv-scanner). Release gates on that single condition;
-    # `needs` will block automatically on any upstream failure.
+    # Runs when anything multicz tracks moved - a package, or the docs
+    # component on its own.
+    #
+    # On the docs-only path every upstream quality job is skipped (they
+    # all gate on `has_package_changes`), and a skipped `needs` would
+    # normally skip this job too. `!cancelled()` lifts that, so the
+    # failure check has to be spelled out explicitly instead of being
+    # implied by `needs`: without it, `!cancelled()` would also let the
+    # release through after a genuinely failing test job.
     if: >-
-      github.event_name == 'push'
+      !cancelled()
+      && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
+      && github.event_name == 'push'
       && github.ref == 'refs/heads/main'
-      && needs.detect.outputs.has_package_changes == 'true'
+      && (needs.detect.outputs.has_package_changes == 'true'
+      || needs.detect.outputs.docs_changed == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: write       # push release commit + tags
@@ -552,6 +569,9 @@ jobs:
       no_bumps:    ${{ steps.bump.outputs.no_bumps }}
       bumped:      ${{ steps.bump.outputs.bumped }}
       bumped_json: ${{ steps.bump.outputs.bumped_json }}
+      # `bumped_json` minus the `docs` component, which has no wheel to
+      # build - it is what the `pypi-publish` matrix expands over.
+      bumped_pypi_json: ${{ steps.bump.outputs.bumped_pypi_json }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -613,8 +633,10 @@ jobs:
           echo "$PLAN" > /tmp/multicz-plan.json
           BUMPED=$(echo "$PLAN" | jq -r '.bumps | keys | join(" ")')
           BUMPED_JSON=$(echo "$PLAN" | jq -c '.bumps | keys')
+          BUMPED_PYPI_JSON=$(echo "$PLAN" | jq -c '.bumps | keys | map(select(. != "docs"))')
           echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
           echo "bumped_json=$BUMPED_JSON" >> "$GITHUB_OUTPUT"
+          echo "bumped_pypi_json=$BUMPED_PYPI_JSON" >> "$GITHUB_OUTPUT"
           if [ -z "$BUMPED" ]; then
             echo "no_bumps=true" >> "$GITHUB_OUTPUT"
           else
@@ -629,8 +651,10 @@ jobs:
           echo "$PLAN" > /tmp/multicz-plan.json
           BUMPED=$(echo "$PLAN" | jq -r '.bumps | keys | join(" ")')
           BUMPED_JSON=$(echo "$PLAN" | jq -c '.bumps | keys')
+          BUMPED_PYPI_JSON=$(echo "$PLAN" | jq -c '.bumps | keys | map(select(. != "docs"))')
           echo "bumped=$BUMPED" >> "$GITHUB_OUTPUT"
           echo "bumped_json=$BUMPED_JSON" >> "$GITHUB_OUTPUT"
+          echo "bumped_pypi_json=$BUMPED_PYPI_JSON" >> "$GITHUB_OUTPUT"
           if [ -z "$BUMPED" ]; then
             echo "no_bumps=true" >> "$GITHUB_OUTPUT"
           else
@@ -647,10 +671,12 @@ jobs:
           if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
             echo 'bumped=${{ steps.bump_signed.outputs.bumped }}' >> "$GITHUB_OUTPUT"
             echo 'bumped_json=${{ steps.bump_signed.outputs.bumped_json }}' >> "$GITHUB_OUTPUT"
+            echo 'bumped_pypi_json=${{ steps.bump_signed.outputs.bumped_pypi_json }}' >> "$GITHUB_OUTPUT"
             echo 'no_bumps=${{ steps.bump_signed.outputs.no_bumps }}' >> "$GITHUB_OUTPUT"
           else
             echo 'bumped=${{ steps.bump_unsigned.outputs.bumped }}' >> "$GITHUB_OUTPUT"
             echo 'bumped_json=${{ steps.bump_unsigned.outputs.bumped_json }}' >> "$GITHUB_OUTPUT"
+            echo 'bumped_pypi_json=${{ steps.bump_unsigned.outputs.bumped_pypi_json }}' >> "$GITHUB_OUTPUT"
             echo 'no_bumps=${{ steps.bump_unsigned.outputs.no_bumps }}' >> "$GITHUB_OUTPUT"
           fi
       - name: Write step summary
@@ -698,11 +724,15 @@ jobs:
       && github.ref == 'refs/heads/main'
       && needs.release.result == 'success'
       && needs.release.outputs.no_bumps == 'false'
+      && needs.release.outputs.bumped_pypi_json != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        component: ${{ fromJson(needs.release.outputs.bumped_json) }}
+        # `bumped_pypi_json`, not `bumped_json`: a release can bump the
+        # `docs` component, which has no wheel and no PyPI project. On a
+        # docs-only release this list is empty and the job does not run.
+        component: ${{ fromJson(needs.release.outputs.bumped_pypi_json) }}
     environment:
       name: pypi-${{ matrix.component }}
       url: https://pypi.org/project/${{ matrix.component }}/
@@ -767,13 +797,19 @@ jobs:
             echo "- GitHub: https://github.com/goabonga/tripack/releases/tag/${pkg}-v${version}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Build the Zensical site and deploy it to GitHub Pages. Gated on
-  # any successful release bump: the site embeds version numbers and
-  # changelog content, so every bump invalidates the rendered output
-  # even when no markdown file was touched in the same push. Runs in
-  # parallel with `pypi-publish` - the site documents the source at
-  # the tagged commit, not the PyPI artifact, so it does not need
-  # PyPI to be live first.
+  # Build the Zensical site and deploy it to GitHub Pages. Gated on any
+  # successful release bump, which now covers both directions:
+  #
+  #   - a package bump cascades a `docs` patch (the site embeds version
+  #     numbers and changelog content, so a release invalidates the
+  #     rendered output even when no markdown was touched);
+  #   - a docs-only push bumps the `docs` component directly, so the
+  #     site redeploys without any package moving.
+  #
+  # Runs in parallel with `pypi-publish` - the site documents the source
+  # at the tagged commit, not the PyPI artifact, so it does not need
+  # PyPI to be live first. On a docs-only release `pypi-publish` has an
+  # empty matrix and does not run at all.
   docs:
     name: docs
     needs: [detect, release]
