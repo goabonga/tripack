@@ -60,8 +60,5 @@ Thumbs.db
 .pyright/
 .pytype/
 
-# uv / build artefacts
-.python-version
-
 # Zensical build output
 site/
