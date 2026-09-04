@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  SPDX-License-Identifier: MIT
+  Copyright (c) 2026 Chris <goabonga@pm.me>
+
+  Tripack master logo. Regenerate the derived assets (docs/tripack.svg,
+  docs/favicon.ico) with `scripts/regen-icons.sh` after editing.
+
+  The isometric cube is the container: three visible faces for the three
+  workspace packages (contracts / runtime / container) assembled into a
+  single object. The graph etched on the top face is a resolved
+  dependency tree - one root wired to the two dependencies injected into
+  it. The teal palette is FastAPI's, the framework the container adapter
+  targets.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Rounded shell -->
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="#00695C"/>
+  <rect x="34" y="34" width="188" height="188" rx="40" fill="#009688"/>
+  <!-- Cube: top / left / right face -->
+  <path d="M128 56 L198 96 L128 136 L58 96 Z" fill="#FFFFFF"/>
+  <path d="M58 96 L128 136 L128 210 L58 170 Z" fill="#B2DFDB"/>
+  <path d="M198 96 L128 136 L128 210 L198 170 Z" fill="#00695C"/>
+  <!-- Dependency graph on the top face -->
+  <g stroke="#00695C" stroke-width="9" stroke-linecap="round">
+    <line x1="128" y1="78" x2="97" y2="94"/>
+    <line x1="128" y1="78" x2="159" y2="94"/>
+  </g>
+  <g fill="#00695C">
+    <circle cx="128" cy="78" r="11"/>
+    <circle cx="97" cy="94" r="11"/>
+    <circle cx="159" cy="94" r="11"/>
+  </g>
+</svg>
