@@ -66,15 +66,21 @@ testpaths = ["packages", "tests"]
 pythonpath = ["tests/integration"]
 
 [tool.coverage.run]
-# Restrict coverage measurement to the production source tree. Any
+# Restrict coverage measurement to the production source trees. Any
 # ``pytest --cov`` invocation from the workspace root (whether it
 # passes an explicit ``--cov=<module>`` flag or not) ends up tracking
-# ``packages/`` only - the workspace-wide integration suite under
-# ``tests/integration/`` exercises the same code paths and would
-# otherwise show up in the report with partial coverage (not every
-# fixture is exercised by every test), which would fail the
-# ``fail_under = 100`` gate below for the wrong reason.
-source = ["packages"]
+# the three ``packages/*/src`` directories only. Test code is
+# deliberately out of scope: both the per-package suites under
+# ``packages/*/tests/`` and the workspace-wide integration suite under
+# ``tests/integration/`` contain stubs and fixtures that are not
+# exercised by every test (unused ASGI callbacks, dummy protocol
+# implementations), which would fail the ``fail_under = 100`` gate
+# below for the wrong reason.
+source = [
+    "packages/tripack-contracts/src",
+    "packages/tripack-runtime/src",
+    "packages/tripack-container/src",
+]
 
 [tool.coverage.report]
 # Drives `pytest --cov` and the CI matrix gate: every package must hit
