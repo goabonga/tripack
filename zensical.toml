@@ -71,3 +71,11 @@ nav = [
     ] },
     { "Stability & deprecation" = "stability.md" },
 ]
+
+# Branding. Both files are generated from `assets/tripack.svg` by
+# `scripts/regen-icons.sh` and committed: the docs job builds the site
+# from the checked-in tree and never installs the `favicon` dep group.
+# Paths resolve relative to the docs dir.
+[project.theme]
+logo = "tripack.svg"
+favicon = "favicon.ico"
